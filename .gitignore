@@ -1,0 +1,81 @@
+# 環境配置
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+*.ipynb
+*.ipynb_*
+
+
+# 虛擬環境
+venv/
+ENV/
+.venv
+*.env
+.env.*
+!.env.example
+
+
+# IDE相關
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+*.sublime-workspace
+*.sublime-project
+.cursor/
+.devcontainer/
+
+
+# 日誌文件
+*.log
+logs/
+log/
+
+# 暫存文件
+*.tmp
+*.temp
+.cache
+*tmp*
+*temp*
+
+
+# 數據文件（如果有的話）
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite3
+*.txt
+!requirements.txt
+
+# scripts
+run*
+code/tests/*
+
+# other
+Dockerfile.dev

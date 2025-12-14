@@ -1,0 +1,94 @@
+# .dockerignore
+
+# Git相關
+.git/
+.gitignore
+
+# Docker相關
+Dockerfile
+.dockerignore
+
+# 環境配置 (通常在容器中透過環境變數注入，而不是直接複製 .env 檔案)
+.env
+*.env
+.env.*
+!.env.example
+
+# Python 虛擬環境和快取
+__pycache__/
+*.py[cod]
+*$py.class
+*pytest*
+# *.so (除非這些 .so 檔案是你應用程式執行時的必要部分且不是由 pip 在容器內安裝的)
+# 如果你的 .so 檔案是建置產物或來自本地開發環境，則應忽略
+# 如果它們是應用程式的依賴，且你希望手動複製，則不要忽略
+.Python
+env/
+venv/
+ENV/
+.venv
+.env # 重複，但明確列出也無妨
+
+# Python 建置/打包相關的檔案和目錄
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE 和作業系統相關
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+*.sublime-workspace
+*.sublime-project
+
+# 日誌文件 (通常由運行的容器產生，而不是包含在映像檔中)
+*.log
+logs/
+log/
+
+# 暫存文件
+*.tmp
+*.temp
+.cache
+*tmp*
+*temp*
+
+# Jupyter Notebooks (通常用於開發，不包含在生產映像檔中)
+*.ipynb
+*.ipynb_*
+
+# 數據文件 (請謹慎考慮！)
+# 如果這些是開發/測試用的範例數據，或者不應包含在映像檔中的大型數據集，則忽略它們。
+# 如果你的應用程式啟動時需要這些檔案作為初始數據或配置，則不應該忽略它們。
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite3
+*.txt 
+!requirements.txt
+
+# 其他通常不需要在映像檔中的檔案
+README.md
+**/*.md
+
+**/tests/
+**/docs/
+
+# scripts
+run*
+

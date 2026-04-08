@@ -72,13 +72,13 @@ log/
 *.db
 *.sqlite3
 *.txt
-docs/
+docs/superpowers/
 !requirements.txt
 
 # Local helper scripts
 scripts/
 run*
-code/tests/*
+code/tests/__pycache__/
 
 # other
 Dockerfile.dev

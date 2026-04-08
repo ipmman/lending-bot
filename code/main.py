@@ -31,18 +31,9 @@ logger = logging.getLogger(__name__)
 
 """
 TODO:
-        1. 背景抓掛單簿 (v)、市場 (v)、錢包資訊 (v)
-        2. 主程式(前景)
-            - a. FRR掛單, 先嘗試簡單掛單，之後再調整 (v)
-            - b. 動態調整；掛單簿幾小時沒掛出重新掛一次 (v)
-        3. 成交的掛單狀態，如何抓資訊 (v)
-        ---
-        
-        4. 抓OHLCV資料，`掛單未成交`次數太多時，直接使用此數據掛單，使用最小天數2天 (v)
-        5. 階梯式掛單，不要一次性使用全部資金 -- 還沒有這麼多錢 :)
-        6. 美化掛單簿時間log存活資訊 (v)
-        
-        * Google 的 Time Series Foundation Model，預測最佳利率 -- 等待放貸功能完善再執行
+        1. 階梯式掛單，不要一次性使用全部資金 -- 還沒有這麼多錢 :)
+        2. smart candles 策略目前刻意停用/暫存;
+           在 FRR/Active 主流程穩定且補測試前，不要把 candles 接回主流程。
 """
 
 
@@ -191,6 +182,7 @@ async def place_order(order_manager,
         
         # 對於非主動模式，檢查是否需要調整到 book_rate
         if mode != "active":
+            discount = config.ACTIVE_RATE_DISCOUNT
             if book_rate and (book_rate * discount) > desired_rate:
                 desired_rate = book_rate * discount
             

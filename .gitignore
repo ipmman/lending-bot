@@ -1,4 +1,4 @@
-# 環境配置
+# Environment files
 .env
 .env.*
 !.env.example
@@ -30,7 +30,7 @@ wheels/
 *.ipynb_*
 
 
-# 虛擬環境
+# Virtual environments
 venv/
 ENV/
 .venv
@@ -39,7 +39,7 @@ ENV/
 !.env.example
 
 
-# IDE相關
+# IDE and OS files
 .idea/
 .vscode/
 *.swp
@@ -49,14 +49,15 @@ ENV/
 *.sublime-project
 .cursor/
 .devcontainer/
+.codex
 
 
-# 日誌文件
+# Logs
 *.log
 logs/
 log/
 
-# 暫存文件
+# Temporary files
 *.tmp
 *.temp
 .cache
@@ -64,16 +65,18 @@ log/
 *temp*
 
 
-# 數據文件（如果有的話）
+# Local data files
 *.csv
 *.xlsx
 *.xls
 *.db
 *.sqlite3
 *.txt
+docs/
 !requirements.txt
 
-# scripts
+# Local helper scripts
+scripts/
 run*
 code/tests/*
 

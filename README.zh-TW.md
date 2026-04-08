@@ -129,7 +129,7 @@ docker run --rm -it \
 
 | 變數名稱 | 預設值 | 說明 |
 |---------|--------|------|
-| `SYMBOL` | `USDT` | 放貸幣別代號。注意：Bitfinex API 裡 USDT 叫 `UST`，程式會自動做 `USDT` → `UST` 轉換。|
+| `SYMBOL` | `USDT` | 放貸幣別代號。請填常見幣名，例如 `USDT`；Bitfinex API 需要的內部代號由程式自動轉換。|
 
 ### 進階參數 (Advanced)
 

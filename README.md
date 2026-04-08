@@ -129,7 +129,7 @@ docker run --rm -it \
 
 | Variable Name | Default Value | Description |
 |---------------|---------------|-------------|
-| `SYMBOL` | `USDT` | Funding currency symbol. Note: Bitfinex uses `UST` to represent `USDT` in its API; the bot normalizes `USDT` → `UST`. |
+| `SYMBOL` | `USDT` | Funding currency symbol. Use the common currency name, e.g. `USDT`; Bitfinex API-specific symbols are normalized internally. |
 
 ### Advanced Parameters
 

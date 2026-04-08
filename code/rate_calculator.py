@@ -30,17 +30,12 @@ def calculate_rate(
         Daily rate as a fraction (e.g. 0.000274 for ~10% yearly)
     """
     min_rate = min_rate_yearly / 365 / 100
-    frr_fallback_used = False
 
     if mode == "smart" and candles_stats:
         desired_rate = calculate_smart_rate(ticker_stats, candles_stats, min_rate)
 
     elif mode == "frr":
-        if ticker_stats and "frr_yearly" in ticker_stats:
-            frr_yearly = ticker_stats["frr_yearly"]
-        else:
-            frr_yearly = min_rate_yearly
-            frr_fallback_used = True
+        frr_yearly = ticker_stats.get("frr_yearly", min_rate_yearly) if ticker_stats else min_rate_yearly
         frr = frr_yearly / 365 / 100
         desired_rate = frr * frr_rate_discount
 
@@ -56,12 +51,7 @@ def calculate_rate(
     if mode != "active":
         if book_rate and (book_rate * active_rate_discount) > desired_rate:
             desired_rate = book_rate * active_rate_discount
-            frr_fallback_used = False  # book_rate override gives a real rate
 
-    # Apply min_rate floor, but skip it when FRR fell back to min_rate_yearly
-    # (that case intentionally returns a discounted rate below min_rate)
-    if frr_fallback_used:
-        return desired_rate
     return max(desired_rate, min_rate)
 
 

@@ -50,17 +50,16 @@ class TestFRRMode:
         assert result == pytest.approx(expected)
 
     def test_frr_fallback_no_frr_yearly(self):
-        """FRR mode: ticker_stats missing frr_yearly → fallback to min_rate_yearly"""
+        """FRR mode: ticker_stats missing frr_yearly → fallback to min_rate, floored"""
         ticker = {}
         result = _call("frr", ticker_stats=ticker)
-        expected = _min_daily() * FRR_DISCOUNT
-        assert result == pytest.approx(expected)
+        # min_rate * discount < min_rate, so floor applies
+        assert result == pytest.approx(_min_daily())
 
     def test_frr_fallback_none_ticker(self):
-        """FRR mode: ticker_stats is None → fallback to min_rate_yearly"""
+        """FRR mode: ticker_stats is None → fallback to min_rate, floored"""
         result = _call("frr", ticker_stats=None)
-        expected = _min_daily() * FRR_DISCOUNT
-        assert result == pytest.approx(expected)
+        assert result == pytest.approx(_min_daily())
 
 
 class TestActiveMode:

@@ -73,6 +73,7 @@ log/
 *.sqlite3
 *.txt
 docs/superpowers/
+docs/reviews/
 !requirements.txt
 
 # Local helper scripts

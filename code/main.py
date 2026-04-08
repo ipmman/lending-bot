@@ -13,6 +13,7 @@ from wallet_manager import WalletManager
 from utils.time import get_elapsed_time, format_elapsed_time
 from utils.logging_config import setup_logging
 from utils.backoff import ExponentialBackoff
+from rate_calculator import calculate_rate
 
 
 
@@ -145,50 +146,26 @@ async def wallet_manager_task(wallet_manager, wallet_queue):
 
 
 # 掛單邏輯
-async def place_order(order_manager, 
-                      ticker_stats, 
-                      funding_balance, 
+async def place_order(order_manager,
+                      ticker_stats,
+                      funding_balance,
                       symbol,
-                      candles_stats=None,  # 新增 candles 統計數據
+                      candles_stats=None,
                       days=2,
                       book_rate=None,
-                      mode="smart"):  # 改為智能模式
-    """執行掛單邏輯，根據市場數據計算利率並提交掛單"""
+                      mode="smart"):
+    """Execute order: calculate rate, log, and submit."""
     try:
-        min_rate = config.MINIMUM_RATE / 365 / 100  # 轉換為每日利率
-        
-        if mode == "smart" and candles_stats:
-            # 智能策略：結合多種數據源
-            desired_rate = calculate_smart_rate(ticker_stats, candles_stats, min_rate)
-        
-        elif mode == "frr":
-            discount = config.FRR_RATE_DISCOUNT
-            frr = (ticker_stats.get("frr_yearly", min_rate) / 365 / 100)
-            desired_rate = frr * discount  # 打折，為了讓掛單排在前面
-        
-        elif mode == "active":
-            # 主動搶單模式：使用 Book Rate 並降價搶單
-            if book_rate:
-                rate_type = "Book Rate"
-                # 主動搶單：降價確保排在最前面
-                discount = config.ACTIVE_RATE_DISCOUNT
-                desired_rate = book_rate * discount
-                discount_pct = discount * 100  # 99
-                logger.debug(f"主動搶單模式：使用 {rate_type} {book_rate*365*100:.4f}% (年) - {discount_pct:.1f} 折")
-            else:
-                desired_rate = min_rate  # 防禦性設定
-        else:
-            desired_rate = min_rate
-        
-        # 對於非主動模式，檢查是否需要調整到 book_rate
-        if mode != "active":
-            discount = config.ACTIVE_RATE_DISCOUNT
-            if book_rate and (book_rate * discount) > desired_rate:
-                desired_rate = book_rate * discount
-            
-        desired_rate = max(desired_rate, min_rate)
-        
-        # 執行掛單
+        desired_rate = calculate_rate(
+            mode=mode,
+            min_rate_yearly=config.MINIMUM_RATE,
+            frr_rate_discount=config.FRR_RATE_DISCOUNT,
+            active_rate_discount=config.ACTIVE_RATE_DISCOUNT,
+            ticker_stats=ticker_stats,
+            candles_stats=candles_stats,
+            book_rate=book_rate,
+        )
+
         logger.info(f"開始掛單: {funding_balance:.2f} {symbol} | 年利率: {desired_rate*365*100:.4f}% | 日利率: {desired_rate*100:.6f}% | 掛單期限: {days}天 | 策略: {mode}")
 
         await order_manager.new_funding_offer(
@@ -199,73 +176,11 @@ async def place_order(order_manager,
         )
         logger.info("**掛單成功**")
         return True
-    
+
     except Exception as e:
         logger.error(f"掛單失敗: {e}")
         logger.error(f"完整錯誤信息: {traceback.format_exc()}")
         return False
-
-
-def calculate_smart_rate(ticker_stats, candles_stats, min_rate):
-    """
-    智能利率計算策略
-    
-    結合：
-    1. ticker 數據（即時市場狀況）
-    2. candles 數據（歷史趨勢分析）
-    3. 風險控制
-    """
-    
-    # 1. 基礎利率來源
-    frr_rate = ticker_stats.get("frr_yearly", 0) / 365 / 100  # FRR 利率
-    
-    # 2. Candles 數據分析
-    if candles_stats and candles_stats.get('count', 0) > 0:
-        # 使用四分位數來判斷市場趨勢
-        q1_close = candles_stats.get('q1_close', 0)  # 25% 分位數
-        median_close = candles_stats.get('median_close', 0)  # 50% 分位數  
-        q3_close = candles_stats.get('q3_close', 0)  # 75% 分位數
-        mean_close = candles_stats.get('mean_close', 0)  # 平均值
-        volatility = candles_stats.get('volatility', 0)  # 波動率
-        
-        # 3. 策略邏輯
-        
-        # 策略A：保守策略 - 使用中位數附近的值
-        # 適合穩定獲利，成交機率較高
-        conservative_rate = (median_close + q1_close) / 2
-        
-        # 策略B：積極策略 - 使用較高分位數
-        # 適合獲取更高利潤，但成交風險較大
-        aggressive_rate = (median_close + q3_close) / 2
-        
-        # 策略C：動態調整 - 根據波動率選擇策略
-        if volatility > 0.1:  # 高波動市場
-            # 高波動時使用保守策略，降低風險
-            candles_rate = conservative_rate
-            logger.debug(f"高波動市場(波動率: {volatility:.3f})，採用保守策略")
-        else:  # 低波動市場
-            # 低波動時可以適度積極
-            candles_rate = (conservative_rate + aggressive_rate) / 2
-            logger.debug(f"低波動市場(波動率: {volatility:.3f})，採用平衡策略")
-        
-        # 4. 多源數據權重組合
-        # FRR 權重 55%，Candles 權重 45%
-        final_rate = (frr_rate * 0.55 + candles_rate * 0.45)
-        
-        logger.debug(f"利率計算明細:")
-        logger.debug(f"  FRR年利率: {frr_rate*365*100:.4f}% (權重55%)")
-        logger.debug(f"  Candles年利率: {candles_rate*365*100:.4f}% (權重45%)")
-        logger.debug(f"  綜合年利率: {final_rate*365*100:.4f}%")
-        
-    else:
-        # 沒有 candles 數據時的備用策略
-        final_rate = frr_rate
-        logger.debug(f"使用備用策略（無Candles數據）: FRR {frr_rate*365*100:.4f}%")
-    
-    # 5. 安全檢查
-    final_rate = max(final_rate, min_rate)
-    
-    return final_rate
 
 
 async def handle_cancel_order_timeout(order_manager, active_id, counter_cancel):

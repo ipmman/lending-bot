@@ -37,6 +37,8 @@ MAX_CONNECTIONS_PER_15_SECONDS: int = 5  # Bitfinex API 限制，勿改
 # ============== 交易參數 ==============
 _USER_SYMBOL: str = os.getenv("SYMBOL", "USDT")
 # Bitfinex 正式環境 USDT 叫 UST，內部自動轉換
+# development 刻意保留 USDT：lending_engine 加 TEST 前綴後會打 fTESTUSDT（paper 有流動性的測試池），
+# 而 _CHANNEL_SYMBOL 另外強制轉 fUST 訂閱真實市場——下單/市場分流是故意的，因為 fTESTUST 是死水池。
 SYMBOL: str = _USER_SYMBOL if ENVIRONMENT == "development" else _USER_SYMBOL.replace("USDT", "UST")
 # 最低年化利率（扣除平台15%手續費前），預設 6% / 0.85 ≈ 7.06%
 MINIMUM_RATE: float = float(os.getenv("MINIMUM_RATE", "7.0588"))
@@ -59,8 +61,8 @@ MARKET_DATA_CRITICAL_STALE_MINUTES: float = float(os.getenv("MARKET_DATA_CRITICA
 FRR_ORDER_TIMEOUT: float = float(os.getenv("FRR_ORDER_TIMEOUT", "1.0"))  # 預設1分鐘; FRR模式掛單未成交時間(分鐘)，超過此時間則取消掛單
 
 # ============== 主動交易模式設定 ==============
-ACTIVE_ORDER_TIMEOUT: float = float(os.getenv("ACTIVE_ORDER_TIMEOUT", "10.0"))  # 主動搶單超時（秒）
-CIRCUIT_BREAKER_DURATION: float = float(os.getenv("CIRCUIT_BREAKER_DURATION", "60"))  # 熔斷機制持續時間（秒）
+ACTIVE_ORDER_TIMEOUT: float = float(os.getenv("ACTIVE_ORDER_TIMEOUT", "30.0"))  # 主動搶單超時（秒）
+CIRCUIT_BREAKER_DURATION: float = float(os.getenv("CIRCUIT_BREAKER_DURATION", "120"))  # 熔斷機制持續時間（秒）
 FRR_FAILURE_THRESHOLD: int = int(os.getenv("FRR_FAILURE_THRESHOLD", "3"))  # FRR 模式失敗閾值
 ACTIVE_MAX_ATTEMPTS: int = int(os.getenv("ACTIVE_MAX_ATTEMPTS", "6"))  # 主動搶單最大嘗試次數
 ACTIVE_RATE_DISCOUNT: float = float(os.getenv("ACTIVE_RATE_DISCOUNT", "0.99"))  # 主動搶單利率折扣（1%）

@@ -47,7 +47,8 @@ def calculate_rate(
     else:
         desired_rate = min_rate
 
-    # For non-active modes, use book_rate if it yields a higher rate
+    # 非 active 模式下，若盤口利率高於本模式算出的目標，改用盤口邏輯
+    # （book_rate 已是市場價，套 active 折扣即可，不需要 FRR 那種較深的讓利）
     if mode != "active":
         if book_rate and (book_rate * active_rate_discount) > desired_rate:
             desired_rate = book_rate * active_rate_discount

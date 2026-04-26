@@ -231,6 +231,8 @@ async def lending_engine(order_manager,
     active_attempt_count = 0  # 主動搶單嘗試次數
     circuit_breaker_triggered = False
     circuit_breaker_start_time = None
+    # 記錄每個訂單掛單時的模式，避免模式切換後誤用錯誤的 timeout
+    order_modes: dict[int, str] = {}
     
     # 策略參數 - 從配置文件讀取
     FRR_FAILURE_THRESHOLD = config.FRR_FAILURE_THRESHOLD
@@ -277,16 +279,22 @@ async def lending_engine(order_manager,
             stop_processing_orders = False
             
             if ask_ids:
+                # 清掉已不存在於活躍清單的訂單記錄
+                active_set = set(ask_ids)
+                for stale_id in [oid for oid in order_modes if oid not in active_set]:
+                    order_modes.pop(stale_id, None)
+
                 for ask_id in ask_ids:
                     # 檢查掛單是否已成交
                     is_executed, execution_status, offer_info = await order_manager.check_order_executed(ask_id)
-            
+
                     if is_executed:
                         # 掛單成交！標記成功，但繼續檢查其他掛單
                         logger.info(f"掛單成交 | 狀態: {execution_status} | ID: {ask_id}")
+                        order_modes.pop(ask_id, None)
                         any_order_executed = True
                         continue  # 檢查下一個 ask_id
-                
+
                     # ----- 如果未成交，才繼續處理超時邏輯 -----
                     last_update_time = await order_manager.get_order_update_time(ask_id)
                     if last_update_time:
@@ -295,31 +303,33 @@ async def lending_engine(order_manager,
                     else:
                         logger.warning(f"掛單ID: {ask_id} | 未找到更新時間")
                         continue
-                    
-                    # 根據當前模式設定不同的超時時間
-                    if current_mode == "active":
+
+                    # 用「掛單時的模式」判斷 timeout，避免模式切換後誤殺
+                    # 未知來源訂單（例如重啟前留下的）保守使用較長的 FRR timeout
+                    placed_mode = order_modes.get(ask_id, "frr")
+                    if placed_mode == "active":
                         timeout_seconds = ACTIVE_ORDER_TIMEOUT
-                        timeout_condition = time_diff and time_diff["total_seconds"] > timeout_seconds
                     else:
                         timeout_seconds = 60.0 * config.FRR_ORDER_TIMEOUT
-                        timeout_condition = time_diff and time_diff["total_seconds"] > timeout_seconds
-                    
+                    timeout_condition = time_diff and time_diff["total_seconds"] > timeout_seconds
+
                     # 處理掛單超時
                     if timeout_condition:
                         counter_cancel, cancel_success = await handle_cancel_order_timeout(
                             order_manager, ask_id, counter_cancel
                         )
-                        
+
                         if not cancel_success:
                             # 取消掛單失敗(系統錯誤)，應停止本輪訂單處理
                             logger.warning(f"取消掛單 {ask_id} 失敗，暫停本輪訂單處理，等待下一輪主循環。")
                             stop_processing_orders = True
                             break  # 跳出 for 迴圈
                         else:
-                            # 訂單因超時被成功取消(策略失敗)，更新失敗計數
-                            if current_mode == "frr":
+                            # 訂單因超時被成功取消(策略失敗)，依「掛單時的模式」更新失敗計數
+                            order_modes.pop(ask_id, None)
+                            if placed_mode == "frr":
                                 frr_failure_count += 1
-                            elif current_mode == "active":
+                            elif placed_mode == "active":
                                 active_attempt_count += 1
                 
                 # 在迴圈後檢查旗標
@@ -410,14 +420,19 @@ async def lending_engine(order_manager,
                     logger.debug(f"當前策略模式: {current_mode.upper()} - 失敗次數: {frr_failure_count}/{FRR_FAILURE_THRESHOLD}")
                 elif current_mode == "active":
                     logger.debug(f"當前策略模式: {current_mode.upper()} - 失敗次數: {active_attempt_count}/{ACTIVE_MAX_ATTEMPTS}")
-                
+
+                # 下單前快照現有訂單，以便下單後辨識新增的訂單並標記模式
+                _, ask_ids_before = await order_manager.get_active_order_ids(symbol)
                 place_success = await place_order(order_manager, ticker_stats, funding_balance, symbol,
                     candles_stats=None, book_rate=book_rate, mode=current_mode)
-                
+
                 if not place_success:
                     logger.warning(f"掛單提交失敗，將在下一輪重試。")
                 else:
                     logger.info(f"掛單提交成功！等待成交...")
+                    _, ask_ids_after = await order_manager.get_active_order_ids(symbol)
+                    for new_id in set(ask_ids_after) - set(ask_ids_before):
+                        order_modes[new_id] = current_mode
             else:
                 logger.debug("餘額不足，最低掛單金額為 150.0 美元或等值的 USDT，等待下一輪...")
 

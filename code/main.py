@@ -233,6 +233,7 @@ async def lending_engine(order_manager,
     circuit_breaker_start_time = None
     # 記錄每個訂單掛單時的模式，避免模式切換後誤用錯誤的 timeout
     order_modes: dict[int, str] = {}
+    last_heartbeat = datetime.now()
     
     # 策略參數 - 從配置文件讀取
     FRR_FAILURE_THRESHOLD = config.FRR_FAILURE_THRESHOLD
@@ -305,8 +306,12 @@ async def lending_engine(order_manager,
                         continue
 
                     # 用「掛單時的模式」判斷 timeout，避免模式切換後誤殺
-                    # 未知來源訂單（例如重啟前留下的）保守使用較長的 FRR timeout
-                    placed_mode = order_modes.get(ask_id, "frr")
+                    # 未知來源訂單（例如重啟前留下的、或下單後 snapshot 沒對到的）
+                    # 保守使用較長的 FRR timeout；同時記 WARNING 觀察觸發頻率
+                    placed_mode = order_modes.get(ask_id)
+                    if placed_mode is None:
+                        logger.warning(f"掛單 {ask_id} 缺少模式記錄，fallback 為 frr (timeout={config.FRR_ORDER_TIMEOUT}分)")
+                        placed_mode = "frr"
                     if placed_mode == "active":
                         timeout_seconds = ACTIVE_ORDER_TIMEOUT
                     else:
@@ -423,6 +428,16 @@ async def lending_engine(order_manager,
 
                 # 下單前快照現有訂單，以便下單後辨識新增的訂單並標記模式
                 _, ask_ids_before = await order_manager.get_active_order_ids(symbol)
+
+                # Guard: 已有活躍掛單就跳過本輪下單，避免 wallet/offer 狀態不同步造成重複下單
+                if ask_ids_before:
+                    logger.debug(f"已有 {len(ask_ids_before)} 筆活躍掛單，本輪跳過下單")
+                    # 等成交期間也算正常運作，先把錯誤計數歸零再 continue
+                    counter_cancel = 0
+                    error_backoff.success()
+                    await asyncio.sleep(config.MAIN_LOOP_DELAY)
+                    continue
+
                 place_success = await place_order(order_manager, ticker_stats, funding_balance, symbol,
                     candles_stats=None, book_rate=book_rate, mode=current_mode)
 
@@ -449,6 +464,26 @@ async def lending_engine(order_manager,
             # success, 重置計數器
             counter_cancel = 0
             error_backoff.success()  # 重置退避計數器
+
+            # 心跳：每 HEARTBEAT_INTERVAL 秒印一行 INFO summary，避免 DEBUG 洗版
+            if config.HEARTBEAT_INTERVAL > 0:
+                now = datetime.now()
+                if (now - last_heartbeat).total_seconds() >= config.HEARTBEAT_INTERVAL:
+                    parts = [
+                        f"mode={current_mode}",
+                        f"balance={funding_balance:.2f}",
+                        f"orders={len(ask_ids) if ask_ids else 0}",
+                    ]
+                    if ticker_stats:
+                        parts.append(f"frr={ticker_stats['frr_yearly']:.4f}%")
+                        parts.append(f"low={ticker_stats['low_rate_yearly']:.4f}%")
+                    if book_rate is not None:
+                        parts.append(f"book={book_rate*365*100:.4f}%")
+                    if last_update:
+                        parts.append(f"age={(now - last_update).total_seconds():.0f}s")
+                    logger.info("heartbeat | " + " | ".join(parts))
+                    last_heartbeat = now
+
             # 短暫休眠後再次檢查
             await asyncio.sleep(config.MAIN_LOOP_DELAY)
             

@@ -59,6 +59,7 @@ MARKET_INFO_MAX_AGE_MINUTES: float = float(os.getenv("MARKET_INFO_MAX_AGE_MINUTE
 MARKET_DATA_FETCH_TIMEOUT: float = float(os.getenv("MARKET_DATA_FETCH_TIMEOUT", "1.0"))  # 預設1分鐘; 獲取市場數據的最長等待時間(分鐘)
 MARKET_DATA_CRITICAL_STALE_MINUTES: float = float(os.getenv("MARKET_DATA_CRITICAL_STALE_MINUTES", "20.0"))  # 預設20分鐘; 市場數據嚴重過期時間(分鐘)，超過此時間觸發重連
 FRR_ORDER_TIMEOUT: float = float(os.getenv("FRR_ORDER_TIMEOUT", "1.0"))  # 預設1分鐘; FRR模式掛單未成交時間(分鐘)，超過此時間則取消掛單
+HEARTBEAT_INTERVAL: float = float(os.getenv("HEARTBEAT_INTERVAL", "60.0"))  # 預設60秒; 心跳 log 間隔，0 表示停用
 
 # ============== 主動交易模式設定 ==============
 ACTIVE_ORDER_TIMEOUT: float = float(os.getenv("ACTIVE_ORDER_TIMEOUT", "30.0"))  # 主動搶單超時（秒）

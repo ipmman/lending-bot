@@ -442,7 +442,14 @@ class MarketInfoProcessor:
             try:
                 if isinstance(data, dict) and data.get("event") == "subscribed":
                     await self.enroll_channel_id(data)
-                
+
+                # 交易所公告：20051 伺服器重啟、20060 開始維護、20061 維護結束
+                elif isinstance(data, dict) and data.get("event") == "info" and data.get("code"):
+                    logging.warning(f"交易所公告 {data.get('code')}: {data.get('msg')}")
+                    # 20061 維護結束：文件建議重新訂閱所有頻道，透過重連公開連線完成
+                    if data.get("code") == 20061 and self.reconnect_queue:
+                        await self.reconnect_queue.put("pub")
+
                 elif isinstance(data, list):
                     if "hb" != data[1]:
                         if data[0] in self.enrolled_channels:

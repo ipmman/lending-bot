@@ -6,7 +6,6 @@ from math import log10, floor
 
 import logging
 import asyncio
-import traceback
 import zlib
 import ctypes
 

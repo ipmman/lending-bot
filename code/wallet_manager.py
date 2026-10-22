@@ -1,9 +1,8 @@
 import asyncio
 import logging
-import websockets
 import config
 
-from typing import Dict, Any
+from typing import Dict
 from websocket_client import WebSocketClient, MessageDispatcher
 from authenticator import Authenticator
 

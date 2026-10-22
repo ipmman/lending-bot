@@ -2,7 +2,6 @@ import asyncio
 import logging
 import config
 import traceback
-import os
 
 from datetime import datetime
 from websocket_client import WebSocketClient, MessageDispatcher, LOCK_ORDER

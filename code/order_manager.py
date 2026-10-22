@@ -1,12 +1,9 @@
-from ast import List
-from typing import Dict, Any, DefaultDict, Union, Optional, Tuple
-from collections import defaultdict
+from typing import Dict, Any, Union, Optional, Tuple
 from websocket_client import WebSocketClient, MessageDispatcher
 from authenticator import Authenticator
 
 import logging
 import asyncio
-import websockets
 import config
 
 import pandas as pd

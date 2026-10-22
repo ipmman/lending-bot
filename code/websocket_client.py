@@ -5,7 +5,6 @@ import logging
 import time
 import math
 import config
-import random
 import uuid
 import traceback
 
@@ -102,13 +101,13 @@ class WebSocketClient:
     _rate_limits = {
         "pub": {
             "interval": 60,  # 60-second window
-            "max_connections": 20,  # 20 connections
+            "max_connections": config.MAX_CONNECTIONS_PER_MINUTE,
             "timestamps": deque(),
             "lock": asyncio.Lock(),
         },
         "auth": {
             "interval": 15,  # 15-second window
-            "max_connections": 5,
+            "max_connections": config.MAX_CONNECTIONS_PER_15_SECONDS,
             "timestamps": deque(),
             "lock": asyncio.Lock(),
         },
@@ -386,14 +385,14 @@ class WebSocketClient:
                     logging.info(f"{conn_type} reconnect state reset; timestamp updated")
     
     
-    async def ensure_connection(self, max_retries=10, authenticator=None, auth_filter=None, dispatcher=None, processor=None) -> bool:
+    async def ensure_connection(self, authenticator=None, auth_filter=None, dispatcher=None, processor=None) -> bool:
         """Reconnect, avoiding duplicate reconnect tasks."""
         
         instance_id = self.instance_id
         should_reconnect = False
         
         try:
-            async with asyncio.timeout(10.0):
+            async with asyncio.timeout(RECONNECTION_TIMEOUT):
                 async with WebSocketClient._reconnect_locks[self.uri_type]:
                     if not WebSocketClient._reconnecting[self.uri_type]:
                         # Cancel any previous reconnect task that may still be running
@@ -445,7 +444,7 @@ class WebSocketClient:
         if caller_is_receiver:
             self.receiver_task = None  # Keep disconnect() from cancelling the receiver that is waiting on this reconnect
         reconnection = asyncio.create_task(
-            self._execute_reconnection(max_retries, instance_id, authenticator, auth_filter, dispatcher, processor))
+            self._execute_reconnection(instance_id, authenticator, auth_filter, dispatcher, processor))
         WebSocketClient._reconnection_tasks[self.uri_type] = reconnection
         try:
             await asyncio.wait({reconnection})
@@ -477,7 +476,7 @@ class WebSocketClient:
         logging.warning(f"Timed out waiting for reconnect to finish {self.uri_type}")
         return False
     
-    async def _execute_reconnection(self, max_retries, instance_id, authenticator=None, auth_filter=None, dispatcher=None, processor=None):
+    async def _execute_reconnection(self, instance_id, authenticator=None, auth_filter=None, dispatcher=None, processor=None):
         """Run the actual reconnect logic (without holding the lock)."""
         try:
             # Check whether the connection is still alive

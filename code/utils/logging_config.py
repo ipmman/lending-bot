@@ -10,6 +10,8 @@ def setup_logging(log_level=logging.INFO, log_file="../logs/main.log"):
 
     logger = logging.getLogger()  # root logger
     logger.setLevel(log_level)
+    # websockets 在 DEBUG 會記錄每個 frame（含 auth 訊息的 apiKey），最低只開到 INFO
+    logging.getLogger("websockets").setLevel(max(log_level, logging.INFO))
 
     # 清除現有的 handler，避免重複
     logger.handlers.clear()

@@ -401,8 +401,6 @@ class WebSocketClient:
                         
                         WebSocketClient._reconnecting[self.uri_type] = True
                         WebSocketClient._reconnecting_timestamps[self.uri_type] = time.monotonic()
-                        # 記錄當前重連任務
-                        WebSocketClient._reconnection_tasks[self.uri_type] = asyncio.current_task()
                         should_reconnect = True
                         logging.debug(f"重連開始 {self.uri_type} (實例ID: {instance_id})")
                     else:
@@ -433,9 +431,22 @@ class WebSocketClient:
                 logging.error(f"等待重連超時 {self.uri_type} (實例ID: {instance_id})")
                 return False
         
+        # 實際重連放在獨立 task 並登記給看門狗 (check_stuck_reconnecting)：卡住時只取消這個 task，
+        # 呼叫者（reconnection_monitor / 接收器）拿到 False 後照原本流程退避重試
+        caller = asyncio.current_task()
+        caller_is_receiver = self.receiver_task is caller
+        if caller_is_receiver:
+            self.receiver_task = None  # 避免 disconnect() 取消正在等待重連的接收器
+        reconnection = asyncio.create_task(
+            self._execute_reconnection(max_retries, instance_id, authenticator, auth_filter, dispatcher, processor))
+        WebSocketClient._reconnection_tasks[self.uri_type] = reconnection
         try:
-            return await self._execute_reconnection(max_retries, instance_id, authenticator, auth_filter, dispatcher, processor)
+            await asyncio.wait({reconnection})
+            return not reconnection.cancelled() and reconnection.result()
         finally:
+            reconnection.cancel()  # 呼叫者本身被取消（例如程式關閉）時一併停止重連
+            if caller_is_receiver and self.receiver_task is None:
+                self.receiver_task = caller  # 重連失敗，接收器繼續自己的重試迴圈
             # 快速清理狀態
             async with WebSocketClient._reconnect_locks[self.uri_type]:
                 WebSocketClient._reconnecting[self.uri_type] = False

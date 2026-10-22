@@ -422,7 +422,7 @@ class MarketInfoProcessor:
             await asyncio.wait_for(self.book_data_ready.wait(), timeout=timeout)
             self.book_data_ready.clear()
         except asyncio.TimeoutError:
-            logging.warning(f"Returning currently available data; timed out waiting for book data ({timeout}s)")
+            logging.debug(f"Returning currently available data; timed out waiting for book data ({timeout}s)")
         
         async with self.book_lock:  # Acquire the lock only once
             book_rate = self.get_best_rate(self.book_df) if self.book_df is not None else 0

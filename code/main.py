@@ -398,13 +398,13 @@ async def lending_engine(order_manager,
             if current_mode == "active":
                 # Active mode only needs book_rate; fetch it directly
                 logger.debug("Active mode: fetching book data directly, skipping the wait for market data")
-                book_data, book_rate = await market_info_processor.get_book_info(timeout=30)
+                book_data, book_rate = await market_info_processor.get_book_info(timeout=5)
             else:
                 # FRR and other modes need full market data
                 ticker_data, ticker_stats = await market_info_processor.get_ticker_info(timeout=config.MARKET_DATA_FETCH_TIMEOUT * 60)
                 
                 last_update = ticker_data.get("LAST_UPDATE_TIME", None)
-                book_data, book_rate = await market_info_processor.get_book_info(timeout=30)
+                book_data, book_rate = await market_info_processor.get_book_info(timeout=5)
                 # _, candles_stats = await market_info_processor.get_candles_info(timeout=30)
 
                 # Check data freshness

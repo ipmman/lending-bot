@@ -586,12 +586,16 @@ async def main():
     public_ws_client.set_processor(market_info_processor)
     market_info_processor.set_reconnect_queue(reconnect_queue)
     
-    # 建立並認證連線（僅一次）
+    # 建立認證連線；啟動時連不上就退避重試，直到連上
     auth_filter = list(config.AUTH_FILTER) if config.AUTH_FILTER else None
-    await auth_ws_client.connect(authenticator, auth_filter=auth_filter)
+    startup_backoff = ExponentialBackoff(base_delay=5, max_delay=120, max_retries=10, jitter=True)
+    while not await auth_ws_client.connect(authenticator, auth_filter=auth_filter):
+        await startup_backoff.wait("啟動時認證連線失敗，")
 
     # 建立公開連線
-    await public_ws_client.connect()
+    startup_backoff.reset()
+    while not await public_ws_client.connect():
+        await startup_backoff.wait("啟動時公開連線失敗，")
     await public_ws_client.subscribe(config.CHANNELS, market_info_processor)  # 傳遞processor實例
     
     # 啟動監聽任務

@@ -26,7 +26,7 @@ def format_elapsed_time(time_diff):
         parts.append(f"{seconds}s")
     
     if not parts:
-        return "Offer age: < 1s"
+        return "< 1s"
     
     # Format as "1d 2h 3m 4s"
     return " ".join(parts)

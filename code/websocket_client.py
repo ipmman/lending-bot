@@ -34,7 +34,11 @@ class MessageDispatcher:
             while True:
                 try:
                     data = await self.auth_ws_client.get_message()
-                    if isinstance(data, list) and len(data) >= 3:
+                    # 認證回應是 dict：{"event": "auth", "status": "OK" | "FAILED", ...}
+                    if isinstance(data, dict) and data.get("event") == "auth":
+                        await self.auth_queue.put(data)
+
+                    elif isinstance(data, list) and len(data) >= 3:
                         channel_id, event_type, payload = data[0], data[1], data[2]
                         # 根據消息類型分發
                         if channel_id == 0:  # 認證通道的消息
@@ -43,9 +47,6 @@ class MessageDispatcher:
 
                             elif event_type in {"ws", "wu"}:
                                 await self.wallet_queue.put(data)  # wallet 相關消息
-                            
-                            else:
-                                await self.auth_queue.put(data)
                 except Exception as e:
                     logging.error(f"Error in dispatch_auth_messages: {e}")
                     await asyncio.sleep(1)

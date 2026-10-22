@@ -679,4 +679,8 @@ async def main():
 
 if __name__ == "__main__":
     config.validate_config()
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # asyncio.run() has already cancelled the tasks and run main()'s cleanup
+        logger.info("Stopped by user (Ctrl+C)")

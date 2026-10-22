@@ -113,7 +113,7 @@ class MarketInfoProcessor:
             logging.warning(f"Returning currently available data; timed out waiting for a candles statistics update ({timeout}s)")
             
         async with self.market_lock:
-            return self.candles_df.copy(), self.candles_stats.copy()
+            return self.candles_df.copy() if self.candles_df is not None else pd.DataFrame(), self.candles_stats.copy()
     
     
     async def enroll_channel_id(self, data: Dict[str, Any]) -> None:

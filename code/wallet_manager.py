@@ -74,12 +74,15 @@ class WalletManager:
         
         Args:
             currency: Currency code
-            timeout: Timeout for waiting on an update; 0 means do not wait
+            wait_for_update: Wait for the next wallet update before reading
+            timeout: Timeout for waiting on an update; 0 means do not wait,
+                None means wait without a limit
         """
         if wait_for_update:
             if timeout != 0:
                 # Add the timer delay so there is enough time for the timer to fire the event
-                timeout += self.update_delay
+                if timeout is not None:
+                    timeout += self.update_delay
                 try:
                     # Wait with a timeout
                     await asyncio.wait_for(self.wallets_updated.wait(), timeout=timeout)
@@ -89,8 +92,6 @@ class WalletManager:
                 except Exception as e:
                     logging.error(f"Error during wallet update: {e}")
                     raise
-        else:
-            await self.wallets_updated.wait()
             
         self.wallets_updated.clear()
             

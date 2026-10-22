@@ -4,7 +4,7 @@ from market_info_processor import MarketInfoProcessor
 
 
 async def test_maintenance_end_triggers_resubscribe(caplog):
-    """20061 維護結束：文件建議重新訂閱所有頻道，透過重連公開連線完成"""
+    """20061 maintenance ended: the docs recommend resubscribing to all channels, done by reconnecting the public connection"""
     processor = MarketInfoProcessor()
     reconnect_queue = asyncio.Queue()
     processor.set_reconnect_queue(reconnect_queue)

@@ -20,18 +20,18 @@ class OrderManager:
         self.authenticator = authenticator
         self.dispatcher = dispatcher
         
-        # 使用 pandas DataFrame 取代字典
+        # Use a pandas DataFrame instead of a dict
         self.offers = pd.DataFrame(columns=[
             "OFFER_ID", "SYMBOL", "MTS_CREATED", "MTS_UPDATED", "AMOUNT", "AMOUNT_ORIG",
             "OFFER_TYPE", "_PLACEHOLDER1", "_PLACEHOLDER2", "FLAGS", "OFFER_STATUS",
             "_PLACEHOLDER3", "_PLACEHOLDER4", "_PLACEHOLDER5", "RATE", "PERIOD",
             "NOTIFY", "HIDDEN", "_PLACEHOLDER6", "RENEW", "_PLACEHOLDER7"
         ])
-        # 設置單一索引以簡化操作
+        # Use a single index to keep operations simple
         self.offers = self.offers.set_index('OFFER_ID')
         
-        self.offers_updated = asyncio.Event()  # 新增事件機制
-        self.offers_lock = asyncio.Lock()  # 添加鎖機制保護數據存取
+        self.offers_updated = asyncio.Event()  # Event mechanism
+        self.offers_lock = asyncio.Lock()  # Lock to protect data access
         self.response_keys = [
             "OFFER_ID", "SYMBOL", "MTS_CREATED", "MTS_UPDATED", "AMOUNT", "AMOUNT_ORIG",
             "OFFER_TYPE", "_PLACEHOLDER1", "_PLACEHOLDER2", "FLAGS", "OFFER_STATUS",
@@ -47,7 +47,7 @@ class OrderManager:
                              period: Optional[int] = None, 
                              offer_id: Optional[int] = None) -> list:
         if offer_id is None:
-            # 創建offer的message
+            # Message to create an offer
             message = [0, "fon", None,
                         {
                             "type": "LIMIT",
@@ -59,7 +59,7 @@ class OrderManager:
                         }
                     ]
         else:
-            # 取消offer的message
+            # Message to cancel an offer
             message = [0, "foc", None, {"id": offer_id}]
         
         return message 
@@ -71,49 +71,49 @@ class OrderManager:
                                 period: int,
                                 verbose: bool = False):
         """
-        新增融資提供(funding offer)
+        Create a funding offer.
         
         Args:
-            symbol (str): 交易幣種
-            amount (float): 掛單數量
-            rate (float): 日利率
-            period (int): 掛單時間
+            symbol (str): Currency symbol
+            amount (float): Offer amount
+            rate (float): Daily rate
+            period (int): Offer period
             
         Returns:
-            Dict[int, Dict[str, Any]]: 所有最新掛單資訊
+            Dict[int, Dict[str, Any]]: Latest details of all offers
         """
         if rate < config.MINIMUM_RATE / 365 / 100:
-            raise ValueError(f"利率 {rate*100*365:.2f}% 低於最低利率要求 {config.MINIMUM_RATE:.2f}%")
+            raise ValueError(f"Rate {rate*100*365:.2f}% is below the minimum rate of {config.MINIMUM_RATE:.2f}%")
         
         try:
             self.offers_updated.clear()
             offer_message = self._build_offer_message(symbol, amount, rate, period)
             await self.websocket_client.send(offer_message)
             if verbose:
-                logging.info(f"送出新的資金融通訂單請求： {amount} {symbol} @ {rate*100:.4f}% (年化 {rate*365*100:.2f}%)，週期 {period} 天")
+                logging.info(f"Sent new funding offer request: {amount} {symbol} @ {rate*100:.4f}% (annual rate {rate*365*100:.2f}%), period {period} days")
             
-            # 等待更新，最多等待60秒
+            # Wait for the update, up to 60 seconds
             try:
-                await asyncio.wait_for(self.offers_updated.wait(), 60.0)  # 等待掛單更新
+                await asyncio.wait_for(self.offers_updated.wait(), 60.0)  # Wait for the offer update
                 self.offers_updated.clear()
             except asyncio.TimeoutError:
-                logging.warning("等待掛單更新確認超時")
+                logging.warning("Timed out waiting for offer update confirmation")
                 raise
         
         except Exception as e:
-            logging.error(f"建立新的資金融通訂單時發生錯誤：{e}")
+            logging.error(f"Error creating new funding offer: {e}")
             raise
 
 
     async def cancel_funding_offer(self, offer_id: int, verbose: bool = False) -> None:
         """
-        取消融資提供(funding offer)
+        Cancel a funding offer.
         
         Args:
-            offer_id (int): 掛單ID
+            offer_id (int): Offer ID
 
         Returns:
-            Dict[int, Dict[str, Any]]: 所有掛單資訊
+            Dict[int, Dict[str, Any]]: Details of all offers
         """
         try:
             self.offers_updated.clear()
@@ -121,24 +121,24 @@ class OrderManager:
             await self.websocket_client.send(message)
 
             if verbose:
-                logging.info(f"送出取消資金借出掛單請求，訂單ID：{offer_id}")
+                logging.info(f"Sent funding offer cancel request, offer ID: {offer_id}")
             
-            # 等待更新
+            # Wait for the update
             try:
                 await asyncio.wait_for(self.offers_updated.wait(), 30.0)
                 self.offers_updated.clear()
                 
             except asyncio.TimeoutError:
-                logging.warning("掛單取消確認超時")
+                logging.warning("Timed out waiting for offer cancellation confirmation")
                 raise
         
         except Exception as e:
-            logging.error(f"取消資金借出掛單時發生錯誤：{e}")
+            logging.error(f"Error canceling funding offer: {e}")
             raise
 
 
     async def get_funding_offer(self, wait_for_update: bool = False, timeout: Optional[float] = None) -> Union[Dict[int, Dict[str, Any]], pd.DataFrame]:
-        """取得融資提供(funding offer)"""
+        """Get funding offers."""
         if wait_for_update:
             try:
                 if timeout is not None:
@@ -146,18 +146,18 @@ class OrderManager:
                 self.offers_updated.clear()
                 
             except asyncio.TimeoutError:
-                logging.debug(f"返回當前掛單資料，等待更新超時（{timeout}秒）")
+                logging.debug(f"Timed out waiting for update ({timeout}s); returning current offer data")
         
         async with self.offers_lock:
             return self.offers.copy()
 
 
     async def get_active_order_ids(self, symbol: str) -> Tuple[list, list]:
-        """獲取當前活躍掛單的所有ID"""
-        # 檢查是否為目標幣種的掛單
+        """Get the IDs of all currently active offers."""
+        # Check whether offers belong to the target currency
         symbol = f"f{symbol}"
         async with self.offers_lock:
-            # 使用 pandas 查詢指定 symbol 的掛單
+            # Use pandas to select offers for the given symbol
             symbol_offers = self.offers[self.offers['SYMBOL'] == symbol]
             
             if symbol_offers.empty:
@@ -170,7 +170,7 @@ class OrderManager:
     
     
     async def get_order_update_time(self, offer_id: int) -> Union[int, None]:
-        """獲取最新的掛單更新時間"""
+        """Get the latest update time of an offer."""
         if offer_id  not in self.offers.index:
             return None
         
@@ -194,7 +194,7 @@ class OrderManager:
 
     
     async def get_symbol_offers(self, symbol: str, as_dataframe: bool = False) -> Union[Dict, pd.DataFrame]:
-        """獲取指定symbol的所有掛單"""
+        """Get all offers for the given symbol."""
         symbol = f"f{symbol}"
         async with self.offers_lock:
             symbol_offers = self.offers[self.offers['SYMBOL'] == symbol]
@@ -202,12 +202,12 @@ class OrderManager:
             if as_dataframe:
                 return symbol_offers.copy()
             else:
-                # 轉換為字典格式，保持與原始API的兼容性
+                # Convert to a dict to stay compatible with the original API
                 return {offer_id: row.to_dict() for offer_id, row in symbol_offers.iterrows()}
             
     
     async def get_symbol_stats(self, symbol: str) -> Dict[str, Any]:
-        """獲取指定symbol的掛單統計資訊"""
+        """Get offer statistics for the given symbol."""
         symbol = f"f{symbol}"
         async with self.offers_lock:
             symbol_offers = self.offers[self.offers['SYMBOL'] == symbol]
@@ -222,7 +222,7 @@ class OrderManager:
                     'total_original_amount': 0.0
                 }
             
-            # 計算統計資訊
+            # Compute statistics
             amounts = pd.to_numeric(symbol_offers['AMOUNT'], errors='coerce').fillna(0)
             rates = pd.to_numeric(symbol_offers['RATE'], errors='coerce').fillna(0)
             original_amounts = pd.to_numeric(symbol_offers['AMOUNT_ORIG'], errors='coerce').fillna(0)
@@ -240,48 +240,48 @@ class OrderManager:
 
 
     async def update_offer(self, offer: pd.Series):
-        """安全地更新 offers DataFrame"""
+        """Safely update the offers DataFrame."""
         async with self.offers_lock:
             offer_id = offer["OFFER_ID"]
 
             self.offers.loc[offer_id] = offer
-            self.offers_updated.set()  # 觸發事件通知更新
+            self.offers_updated.set()  # Fire the event to signal an update
     
     
     async def remove_offer(self, offer: pd.Series):
-        """安全地刪除 offers DataFrame 中的項目"""
+        """Safely remove an entry from the offers DataFrame."""
         async with self.offers_lock:
             offer_id = offer.name.item() if isinstance(offer.name, np.int64) else offer.name
             if offer_id in self.offers.index:
                 self.offers = self.offers.drop(offer_id)
-            self.offers_updated.set()  # 觸發事件通知更新
+            self.offers_updated.set()  # Fire the event to signal an update
     
 
     async def _handle_snapshot(self, infos) -> None:
-        """處理 snapshot """
+        """Handle a snapshot."""
         async with self.offers_lock:
-            # 空快照也要套用：代表交易所端已無掛單（例如斷線期間成交/取消）
+            # Apply empty snapshots too: they mean the exchange has no offers left (e.g. filled/canceled while disconnected)
             self.offers = pd.DataFrame(infos, columns=self.response_keys).set_index('OFFER_ID')
             self.offers_updated.set()
 
     def _parse_single_offer(self, infos) -> pd.Series:
-        """解析單個 offer 更新，返回 pandas Series"""
-        return pd.Series(infos, index=self.response_keys, name=infos[0])  # name 設為 OFFER_ID
+        """Parse a single offer update and return a pandas Series."""
+        return pd.Series(infos, index=self.response_keys, name=infos[0])  # name is set to OFFER_ID
     
     
     async def handle_fo_messages(self, fo_queue, verbose=False):
         """
-        背景執行，接收融資提供(funding offer)訊息
+        Background task that receives funding offer messages.
         """
         while True:
-            # 從專屬隊列獲取消息，而不是直接從WebSocket接收
+            # Get messages from the dedicated queue instead of reading from the WebSocket directly
             data = await fo_queue.get()
             
             try:
                 curr_event = data[1]
                 infos = data[-1]
                 
-                if curr_event == "fos":  # 資金提供快照
+                if curr_event == "fos":  # funding offer snapshot
                     await self._handle_snapshot(infos)
                     if verbose:
                         logging.debug("Received funding offer snapshot")
@@ -305,11 +305,11 @@ class OrderManager:
                     
                     if 'EXECUTED' in status:
                         if verbose:
-                            logging.info(f"Funding offer {status}: {offer_series['OFFER_ID']} | 狀態: {status}")
+                            logging.info(f"Funding offer {status}: {offer_series['OFFER_ID']} | Status: {status}")
                         await self.update_offer(offer_series)
                     else:
                         if verbose:
-                            logging.info(f"Funding offer canceled: {offer_series['OFFER_ID']} | 狀態: {status}")
+                            logging.info(f"Funding offer canceled: {offer_series['OFFER_ID']} | Status: {status}")
                         await self.remove_offer(offer_series)
                 
             

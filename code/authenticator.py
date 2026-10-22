@@ -43,7 +43,7 @@ class Authenticator:
         await websocket_client.send(auth_message)
         
         while True:
-            data = await dispatcher.auth_queue.get()  # 從隊列獲取消息
+            data = await dispatcher.auth_queue.get()  # Get the message from the queue
             if isinstance(data, dict) and data.get("event") == "auth":
                 if data.get("status") != "OK":
                     raise Exception("Cannot authenticate with the given API key and secret.")

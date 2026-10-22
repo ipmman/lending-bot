@@ -15,17 +15,17 @@ from collections import deque
 from market_info_processor import MarketInfoProcessor
 from utils.backoff import ExponentialBackoff
 
-# 添加鎖順序規範，避免死鎖
+# Lock acquisition order, to avoid deadlocks
 LOCK_ORDER = ["auth", "pub"]
-RECONNECTION_TIMEOUT = 10.0  # 獲取重連鎖的超時時間
-RECONNECTION_WAIT_TIMEOUT = 60.0  # 等待其他重連完成的超時時間
+RECONNECTION_TIMEOUT = 10.0  # Timeout for acquiring the reconnect lock
+RECONNECTION_WAIT_TIMEOUT = 60.0  # Timeout for waiting on another reconnect to finish
 
 class MessageDispatcher:
     def __init__(self, auth_ws_client, pub_ws_client):
         self.auth_ws_client = auth_ws_client
         self.pub_ws_client = pub_ws_client
-        self.fo_queue = asyncio.Queue()      # 用於 handle_fo_messages
-        self.wallet_queue = asyncio.Queue()  # 用於 handle_wallet_messages
+        self.fo_queue = asyncio.Queue()      # For handle_fo_messages
+        self.wallet_queue = asyncio.Queue()  # For handle_wallet_messages
         self.auth_queue = asyncio.Queue()
         self.market_queue = asyncio.Queue()
 
@@ -34,41 +34,41 @@ class MessageDispatcher:
             while True:
                 try:
                     data = await self.auth_ws_client.get_message()
-                    # 認證回應是 dict：{"event": "auth", "status": "OK" | "FAILED", ...}
+                    # Auth responses are dicts: {"event": "auth", "status": "OK" | "FAILED", ...}
                     if isinstance(data, dict) and data.get("event") == "auth":
                         await self.auth_queue.put(data)
 
                     elif isinstance(data, list) and len(data) >= 3:
                         channel_id, event_type, payload = data[0], data[1], data[2]
-                        # 根據消息類型分發
-                        if channel_id == 0:  # 認證通道的消息
+                        # Dispatch by message type
+                        if channel_id == 0:  # Messages on the authenticated channel
                             if event_type in {"fon", "foc", "fou", "fos"}:
-                                await self.fo_queue.put(data)  # fo 相關消息
+                                await self.fo_queue.put(data)  # Funding offer messages
 
                             elif event_type in {"ws", "wu"}:
-                                await self.wallet_queue.put(data)  # wallet 相關消息
+                                await self.wallet_queue.put(data)  # Wallet messages
 
-                            # 通知格式 [MTS, TYPE, MESSAGE_ID, null, NOTIFY_INFO, CODE, STATUS, TEXT]
+                            # Notification format: [MTS, TYPE, MESSAGE_ID, null, NOTIFY_INFO, CODE, STATUS, TEXT]
                             elif event_type == "n" and len(payload) > 7 and payload[6] in {"ERROR", "FAILURE"}:
                                 info = payload[4]
                                 offer_id = info[0] if isinstance(info, list) and info else None
-                                logging.warning(f"交易所拒絕 {payload[1]} (ID: {offer_id}): {payload[7] or '交易所未附原因'}")
+                                logging.warning(f"Exchange rejected {payload[1]} (ID: {offer_id}): {payload[7] or 'no reason given'}")
                 except Exception as e:
                     logging.error(f"Error in dispatch_auth_messages: {e}")
                     await asyncio.sleep(1)
                     
         async def dispatch_public_messages():
-            """處理公開 WebSocket 消息"""
+            """Handle public WebSocket messages."""
             while True:
                 try:
                     data = await self.pub_ws_client.get_message()
-                    # 所有 public 消息都放入 market_queue
+                    # All public messages go into market_queue
                     await self.market_queue.put(data)
                 except Exception as e:
                     logging.error(f"Error in dispatch_public_messages: {e}")
                     await asyncio.sleep(1)
         
-        # 同時運行兩個分發任務
+        # Run both dispatch tasks concurrently
         await asyncio.gather(
             dispatch_auth_messages(),
             dispatch_public_messages()
@@ -80,34 +80,34 @@ class WebSocketClient:
         "pub": False,
         "auth": False
     }
-    # 將單一鎖改為按連接類型分離的鎖字典
+    # One lock per connection type instead of a single shared lock
     _reconnect_locks = {
         "pub": asyncio.Lock(),
         "auth": asyncio.Lock()
     }
-    # 記錄重連開始的時間戳
+    # When each reconnect started
     _reconnecting_timestamps = {
         "pub": time.monotonic(),
         "auth": time.monotonic()
     }
-    # 新增：追蹤重連任務
+    # Track reconnect tasks
     _reconnection_tasks = {
         "pub": None,
         "auth": None
     }
-    # 重連最大允許時間（秒）
-    _MAX_RECONNECT_TIME = 600  # 10分鐘，給重連過程更多時間
+    # Maximum time allowed for a reconnect (seconds)
+    _MAX_RECONNECT_TIME = 600  # 10 minutes, to give reconnects more time
     
-    # '類級別'的速率限制配置與追蹤
+    # Class-level rate limit config and tracking
     _rate_limits = {
         "pub": {
-            "interval": 60,  # 60秒窗口
-            "max_connections": 20,  # 20次連線
+            "interval": 60,  # 60-second window
+            "max_connections": 20,  # 20 connections
             "timestamps": deque(),
             "lock": asyncio.Lock(),
         },
         "auth": {
-            "interval": 15,  # 15秒窗口
+            "interval": 15,  # 15-second window
             "max_connections": 5,
             "timestamps": deque(),
             "lock": asyncio.Lock(),
@@ -131,7 +131,7 @@ class WebSocketClient:
         self.dispatcher = None
         self.processor = None
         
-        # 新增：指數退避策略實例
+        # Exponential backoff instance
         self.reconnect_backoff = ExponentialBackoff(
             base_delay=30, 
             max_delay=300, 
@@ -139,9 +139,9 @@ class WebSocketClient:
             jitter=True
         )
         
-        # 根據 URI 確定速率限制類型
+        # Pick the rate limit type from the URI type
         if uri_type not in WebSocketClient._rate_limits:
-            raise ValueError(f"無效的 URI type: {uri_type}")
+            raise ValueError(f"Invalid URI type: {uri_type}")
         
         self.rate_limit_config = WebSocketClient._rate_limits[uri_type]
 
@@ -157,7 +157,7 @@ class WebSocketClient:
 
 
     async def start_receiver(self):
-        """啟動單個消息接收器將消息放入隊列"""
+        """Start a single receiver that puts incoming messages on the queue."""
         if self.receiver_task and not self.receiver_task.done():
             self.receiver_task.cancel()
             try:
@@ -171,7 +171,7 @@ class WebSocketClient:
 
 
     async def _receive_messages(self):
-        """背景任務: 接收WebSocket消息並放入隊列"""
+        """Background task: receive WebSocket messages and put them on the queue."""
         while True:
             try:
                 if not self.websocket or self.websocket.closed:
@@ -182,8 +182,8 @@ class WebSocketClient:
                 await self.message_queue.put(data)
                 
             except websockets.exceptions.ConnectionClosed:
-                logging.error(f"接收訊息時連接已關閉: {self.uri}")
-                # 檢查是否已有重連在進行
+                logging.error(f"Connection closed while receiving messages: {self.uri}")
+                # Check whether a reconnect is already in progress
                 reconnecting = False
                 async with WebSocketClient._reconnect_locks[self.uri_type]:
                     reconnecting = WebSocketClient._reconnecting[self.uri_type]
@@ -194,74 +194,74 @@ class WebSocketClient:
                                                            dispatcher=self.dispatcher,
                                                            processor=self.processor)
                     
-                    # 改進：重連失敗時不應該直接退出，而是進入等待模式
+                    # A failed reconnect shouldn't exit; enter wait mode instead
                     if not success:
-                        logging.error(f"重連失敗，進入指數退避等待模式 ({self.uri_type})")
-                        # 使用指數退避策略實例
-                        await self.reconnect_backoff.wait(f"重連 ({self.uri_type}) ")
-                        continue  # 繼續嘗試，而不是 break
+                        logging.error(f"Reconnect failed, entering exponential backoff ({self.uri_type})")
+                        # Use the exponential backoff instance
+                        await self.reconnect_backoff.wait(f"Reconnect ({self.uri_type}) ")
+                        continue  # Keep retrying instead of breaking out
                     
-                    # 重連成功，重置退避計數器
+                    # Reconnected; reset the backoff counter
                     self.reconnect_backoff.success()
-                    # ensure_connection 成功時會創建新的接收器任務，當前任務應該退出
+                    # On success, ensure_connection starts a new receiver task, so this one should exit
                     return
                 else:
-                    logging.info(f"連接已關閉，但重連正在進行中，等待重連完成 ({self.uri_type})")
+                    logging.info(f"Connection closed, but a reconnect is already in progress; waiting for it to finish ({self.uri_type})")
                     await asyncio.sleep(5)
                     continue
                 
             except Exception as e:
-                logging.error(f"接收訊息時發生錯誤: {e}")
-                await asyncio.sleep(1)  # 短暫延遲後再試
+                logging.error(f"Error while receiving message: {e}")
+                await asyncio.sleep(1)  # Brief delay before retrying
                 continue
             
-    # 從隊列讀取消息
+    # Read messages from the queue
     async def get_message(self):
-        """從消息隊列中獲取一條消息"""
+        """Get one message from the message queue."""
         return await self.message_queue.get()
     
     
     async def _check_rate_limit(self) -> None:
-        """使用滑動窗口強制速率限制"""
+        """Enforce the rate limit with a sliding window."""
         async with self.rate_limit_config["lock"]:
             now = time.monotonic()
             timestamps = self.rate_limit_config["timestamps"]
             interval = self.rate_limit_config["interval"]
             max_conn = self.rate_limit_config["max_connections"]
 
-            # 移除過期時間戳
+            # Drop stale timestamps
             while timestamps and (now - timestamps[0]) > interval:
                 timestamps.popleft()
 
-            # 若超過限制，計算需等待的時間
+            # If over the limit, work out how long to wait
             if len(timestamps) >= max_conn:
                 oldest = timestamps[0]
                 wait_time = interval - (now - oldest)
-                # 增加30秒緩衝
+                # Add a 30-second buffer
                 wait_time = math.ceil(wait_time * 1000) / 1000 + 30.0 
                 logging.warning(
                     f"Rate limit reached. Waiting {wait_time:.2f} seconds."
                 )
-                await asyncio.sleep(wait_time)  # 等待（單位：秒
-                # 更新時間並再次清理過期時間戳
+                await asyncio.sleep(wait_time)  # Wait (in seconds)
+                # Refresh the time and drop stale timestamps again
                 now = time.monotonic()
                 while timestamps and (now - timestamps[0]) > interval:
                     timestamps.popleft()
 
-            # 添加當前時間戳
+            # Record the current timestamp
             timestamps.append(now)
             
             
     async def connect(self, authenticator=None, auth_filter=None, verbose=False) -> None:
-        """建立 WebSocket 連接
+        """Open the WebSocket connection.
         
         Args:
-            authenticator: 用於認證的認證器
-            auth_filter: 認證過濾器
-            verbose (bool): 是否輸出連接日誌
+            authenticator: Authenticator used for authentication
+            auth_filter: Authentication filter
+            verbose (bool): Whether to log connection events
             
         Returns:
-            bool: 連接是否成功
+            bool: Whether the connection succeeded
         """        
         self.authenticator = authenticator
         self.auth_filter = auth_filter
@@ -272,7 +272,7 @@ class WebSocketClient:
                                         self.uri, 
                                         ping_interval=config.PING_INTERVAL,
                                         ping_timeout=config.PING_TIMEOUT)
-            # 自動啟動接收任務
+            # Automatically start the receiver task
             await self.start_receiver()
             if verbose:
                 logging.debug(f"Connected to {self.uri}")
@@ -307,21 +307,21 @@ class WebSocketClient:
 
                 
     async def reconnect(self, verbose=True) -> bool:
-        """重新連接到 WebSocket 服務器
+        """Reconnect to the WebSocket server.
         
         Args:
-            verbose (bool): 是否輸出連接日誌
+            verbose (bool): Whether to log connection events
             
         Returns:
-            bool: 重連是否成功
+            bool: Whether the reconnect succeeded
         """
         if verbose:
             logging.debug(f"Attempting to reconnect to {self.uri}...")
         
-        # 安全關閉當前連接, 取消現有的接收任務
+        # Safely close the current connection and cancel the existing receiver task
         await self.disconnect(verbose=verbose)
         
-        # 使用指數退避策略重試連接
+        # Retry the connection with exponential backoff
         self.reconnect_backoff.reset()
 
         while True:
@@ -331,7 +331,7 @@ class WebSocketClient:
                                     self.uri, 
                                     ping_interval=config.PING_INTERVAL,
                                     ping_timeout=config.PING_TIMEOUT)
-                # 自動啟動接收任務
+                # Automatically start the receiver task
                 await self.start_receiver()
 
                 if verbose:
@@ -342,52 +342,52 @@ class WebSocketClient:
             
             except Exception as e:
                 if verbose:
-                    logging.error(f"Reconnection failed (實例ID: {self.instance_id}):\n{traceback.format_exc()}")
+                    logging.error(f"Reconnection failed (instance ID: {self.instance_id}):\n{traceback.format_exc()}")
                 
-                # wait() 方法會自動處理重試計數和重置邏輯，並記錄相應日誌
-                was_reset = await self.reconnect_backoff.wait(f"重新連線 ({self.uri_type}) ")
+                # wait() handles the retry count and reset logic itself, and logs accordingly
+                was_reset = await self.reconnect_backoff.wait(f"Reconnection ({self.uri_type}) ")
                 
-                # 如果計數器被重置了，說明已經達到最大重試次數，退出循環
+                # A reset counter means max retries was reached; exit the loop
                 if was_reset:
                     break
         if verbose:
-            logging.critical(f"Failed to reconnect after {self.reconnect_backoff.max_retries} attempts (實例ID: {self.instance_id})")
+            logging.critical(f"Failed to reconnect after {self.reconnect_backoff.max_retries} attempts (instance ID: {self.instance_id})")
         
         return False
     
     
     @classmethod
     async def check_stuck_reconnecting(cls):
-        """改進版本：檢查並清理卡住的重連狀態"""
+        """Detect and clear stuck reconnect state."""
         now = time.monotonic()
-        for conn_type in reversed(LOCK_ORDER):  # ["pub", "auth"] 反向清理
+        for conn_type in reversed(LOCK_ORDER):  # ["pub", "auth"]: clean up in reverse order
             async with cls._reconnect_locks[conn_type]:
                 if (cls._reconnecting[conn_type] and 
                     now - cls._reconnecting_timestamps[conn_type] > cls._MAX_RECONNECT_TIME):
                     
                     stuck_duration = now - cls._reconnecting_timestamps[conn_type]
-                    logging.warning(f"檢測到 {conn_type} 連接的重連狀態卡住 ({stuck_duration:.1f}秒)，強制重置")
+                    logging.warning(f"Reconnect state for {conn_type} connection is stuck ({stuck_duration:.1f}s); forcing reset")
                     
-                    # 取消卡住的重連任務
+                    # Cancel the stuck reconnect task
                     stuck_task = cls._reconnection_tasks[conn_type]
                     if stuck_task and not stuck_task.done():
-                        logging.warning(f"取消卡住的重連任務 {conn_type}")
+                        logging.warning(f"Cancelling stuck reconnect task {conn_type}")
                         stuck_task.cancel()
                         try:
                             await asyncio.wait_for(stuck_task, timeout=5.0)
                         except (asyncio.CancelledError, asyncio.TimeoutError):
                             pass
                     
-                    # 重置狀態
+                    # Reset state
                     cls._reconnecting[conn_type] = False
                     cls._reconnection_tasks[conn_type] = None
                     cls._reconnecting_timestamps[conn_type] = now
                     
-                    logging.info(f"{conn_type} 連接重連狀態已重置，時間戳已更新")
+                    logging.info(f"{conn_type} reconnect state reset; timestamp updated")
     
     
     async def ensure_connection(self, max_retries=10, authenticator=None, auth_filter=None, dispatcher=None, processor=None) -> bool:
-        """改進版本，避免重複重連任務"""
+        """Reconnect, avoiding duplicate reconnect tasks."""
         
         instance_id = self.instance_id
         should_reconnect = False
@@ -396,10 +396,10 @@ class WebSocketClient:
             async with asyncio.timeout(10.0):
                 async with WebSocketClient._reconnect_locks[self.uri_type]:
                     if not WebSocketClient._reconnecting[self.uri_type]:
-                        # 取消之前可能存在的重連任務
+                        # Cancel any previous reconnect task that may still be running
                         old_task = WebSocketClient._reconnection_tasks[self.uri_type]
                         if old_task and not old_task.done():
-                            logging.warning(f"取消之前的重連任務 {self.uri_type}")
+                            logging.warning(f"Cancelling previous reconnect task {self.uri_type}")
                             old_task.cancel()
                             try:
                                 await asyncio.wait_for(old_task, timeout=5.0)
@@ -409,41 +409,41 @@ class WebSocketClient:
                         WebSocketClient._reconnecting[self.uri_type] = True
                         WebSocketClient._reconnecting_timestamps[self.uri_type] = time.monotonic()
                         should_reconnect = True
-                        logging.debug(f"重連開始 {self.uri_type} (實例ID: {instance_id})")
+                        logging.debug(f"Reconnect started {self.uri_type} (instance ID: {instance_id})")
                     else:
-                        logging.debug(f"檢測到併發重連請求，等待進行中的重連完成 {self.uri_type} (實例ID: {instance_id})")
+                        logging.debug(f"Concurrent reconnect request; waiting for the in-progress reconnect to finish {self.uri_type} (instance ID: {instance_id})")
         except asyncio.TimeoutError:
-            logging.error(f"無法獲取重連鎖 {self.uri_type}，操作超時")
+            logging.error(f"Could not acquire reconnect lock {self.uri_type}: timed out")
             return False
         
-        # 處理併發重連
+        # Handle concurrent reconnects
         if not should_reconnect:
-            # 等待其他任務完成重連，然後檢查連接狀態
+            # Wait for the other task to finish reconnecting, then check the connection
             wait_result = await self._wait_for_reconnection_with_timeout()
             if wait_result:
-                # 檢查連接是否真的可用
+                # Check that the connection is actually usable
                 if self.websocket and not self.websocket.closed:
                     try:
                         pong = await asyncio.wait_for(self.websocket.ping(), timeout=3)
                         await pong
-                        logging.debug(f"等待重連完成，連接可用 {self.uri_type} (實例ID: {instance_id})")
+                        logging.debug(f"Reconnect finished; connection is usable {self.uri_type} (instance ID: {instance_id})")
                         return True
                     except Exception:
-                        logging.warning(f"等待重連完成，但連接不可用 {self.uri_type} (實例ID: {instance_id})")
+                        logging.warning(f"Reconnect finished, but connection is unusable {self.uri_type} (instance ID: {instance_id})")
                         return False
                 else:
-                    logging.warning(f"等待重連完成，但連接不存在 {self.uri_type} (實例ID: {instance_id})")
+                    logging.warning(f"Reconnect finished, but there is no connection {self.uri_type} (instance ID: {instance_id})")
                     return False
             else:
-                logging.error(f"等待重連超時 {self.uri_type} (實例ID: {instance_id})")
+                logging.error(f"Timed out waiting for reconnect {self.uri_type} (instance ID: {instance_id})")
                 return False
         
-        # 實際重連放在獨立 task 並登記給看門狗 (check_stuck_reconnecting)：卡住時只取消這個 task，
-        # 呼叫者（reconnection_monitor / 接收器）拿到 False 後照原本流程退避重試
+        # Run the actual reconnect in its own task, registered with the watchdog (check_stuck_reconnecting): if it hangs, only this task is cancelled;
+        # the caller (reconnection_monitor / receiver) gets False and backs off and retries as usual
         caller = asyncio.current_task()
         caller_is_receiver = self.receiver_task is caller
         if caller_is_receiver:
-            self.receiver_task = None  # 避免 disconnect() 取消正在等待重連的接收器
+            self.receiver_task = None  # Keep disconnect() from cancelling the receiver that is waiting on this reconnect
         reconnection = asyncio.create_task(
             self._execute_reconnection(max_retries, instance_id, authenticator, auth_filter, dispatcher, processor))
         WebSocketClient._reconnection_tasks[self.uri_type] = reconnection
@@ -451,90 +451,90 @@ class WebSocketClient:
             await asyncio.wait({reconnection})
             return not reconnection.cancelled() and reconnection.result()
         finally:
-            reconnection.cancel()  # 呼叫者本身被取消（例如程式關閉）時一併停止重連
+            reconnection.cancel()  # If the caller itself is cancelled (e.g. on shutdown), stop the reconnect too
             if caller_is_receiver and self.receiver_task is None:
-                self.receiver_task = caller  # 重連失敗，接收器繼續自己的重試迴圈
-            # 快速清理狀態
+                self.receiver_task = caller  # Reconnect failed; the receiver resumes its own retry loop
+            # Quick state cleanup
             async with WebSocketClient._reconnect_locks[self.uri_type]:
                 WebSocketClient._reconnecting[self.uri_type] = False
                 WebSocketClient._reconnection_tasks[self.uri_type] = None
-                logging.debug(f"重連狀態清理完成 {self.uri_type} (實例ID: {instance_id})")
+                logging.debug(f"Reconnect state cleaned up {self.uri_type} (instance ID: {instance_id})")
     
     async def _wait_for_reconnection_with_timeout(self, timeout=RECONNECTION_WAIT_TIMEOUT):
-        """新增：等待其他重連完成，帶超時機制"""
+        """Wait for another reconnect to finish, with a timeout."""
         start_time = time.monotonic()
         while time.monotonic() - start_time < timeout:
             try:
-                async with asyncio.timeout(1.0):  # 每次檢查最多1秒
+                async with asyncio.timeout(1.0):  # At most 1 second per check
                     async with WebSocketClient._reconnect_locks[self.uri_type]:
                         if not WebSocketClient._reconnecting[self.uri_type]:
                             return True
             
             except asyncio.TimeoutError:
-                logging.warning(f"檢查重連狀態超時，繼續等待 {self.uri_type}")
+                logging.warning(f"Timed out checking reconnect state; still waiting {self.uri_type}")
             await asyncio.sleep(1)
         
-        logging.warning(f"等待重連完成超時 {self.uri_type}")
+        logging.warning(f"Timed out waiting for reconnect to finish {self.uri_type}")
         return False
     
     async def _execute_reconnection(self, max_retries, instance_id, authenticator=None, auth_filter=None, dispatcher=None, processor=None):
-        """改進版：執行實際的重連邏輯（不持有鎖）"""
+        """Run the actual reconnect logic (without holding the lock)."""
         try:
-            # 檢查連接是否仍然活動
+            # Check whether the connection is still alive
             if self.websocket and not self.websocket.closed:
                 try:
-                    # 發送一個 ping 測試連接
+                    # Send a ping to test the connection
                     pong = await asyncio.wait_for(self.websocket.ping(), timeout=5)
                     await pong
                     
-                    # 檢查接收器是否活動
+                    # Check whether the receiver is running
                     if not self.receiver_task or self.receiver_task.done():
                         await self.start_receiver()
-                        logging.debug(f"重啟消息接收器 {self.uri_type} (實例ID: {instance_id})")
+                        logging.debug(f"Restarted message receiver {self.uri_type} (instance ID: {instance_id})")
                     
-                    # 連接活動，但可能數據流有問題，繼續執行重新連線邏輯
-                    logging.debug(f"連接仍活動，但將重新連線以確保數據流正常 {self.uri_type} (實例ID: {instance_id})")
+                    # Connection is alive, but the data stream may be broken; reconnect anyway
+                    logging.debug(f"Connection still alive, but reconnecting to make sure data is flowing {self.uri_type} (instance ID: {instance_id})")
                     
                 except Exception as e:
-                    logging.warning(f"連接不活動: {e}. 將重連 {self.uri_type} (實例ID: {instance_id})")
+                    logging.warning(f"Connection not alive: {e}. Will reconnect {self.uri_type} (instance ID: {instance_id})")
 
             if not await self.reconnect():
                 return False
             
-            logging.info(f"重連成功，等待系統穩定 {self.uri_type} (實例ID: {instance_id})")
+            logging.info(f"Reconnected; waiting for the system to stabilize {self.uri_type} (instance ID: {instance_id})")
             await asyncio.sleep(5)
             
             if self.uri_type == "pub" and processor:
-                logging.debug(f"重置市場資訊處理器數據 (實例ID: {instance_id})")
+                logging.debug(f"Resetting market data processor state (instance ID: {instance_id})")
                 processor.reset_channel_state()
                 processor.reset_instance_data()
                 
                 await self.subscribe(config.CHANNELS, processor)
-                logging.debug(f"成功重新訂閱頻道 {self.uri_type} (實例ID: {instance_id})")
+                logging.debug(f"Resubscribed to channels {self.uri_type} (instance ID: {instance_id})")
                 await asyncio.sleep(3)
                 
-            # 重新認證
+            # Re-authenticate
             if self.uri_type == "auth" and authenticator:
                 try:
                     await authenticator.authenticate(self, 
                                                      auth_filter=auth_filter, 
                                                      dispatcher=dispatcher)
-                    logging.debug(f"成功重新認證 {self.uri_type} (實例ID: {instance_id})")
+                    logging.debug(f"Re-authenticated {self.uri_type} (instance ID: {instance_id})")
                     return True
                 except Exception as e:
-                    logging.error(f"重連後認證失敗: {e} {self.uri_type} (實例ID: {instance_id})")
+                    logging.error(f"Authentication failed after reconnect: {e} {self.uri_type} (instance ID: {instance_id})")
                     return False
             
             return True
             
         except Exception as e:
-            logging.error(f"執行重連時發生錯誤: {e} {self.uri_type} (實例ID: {instance_id})")
+            logging.error(f"Error during reconnect: {e} {self.uri_type} (instance ID: {instance_id})")
             return False
 
 
     async def send(self, message: Dict[str, str], retries=3) -> None:
         """
-        把訊息(Dict)轉換成JSON格式的字串 並發送到WebSocket伺服器
+        Serialize the message (dict) to a JSON string and send it to the WebSocket server.
         
         Args:
             message (Dict[str, str])
@@ -551,7 +551,7 @@ class WebSocketClient:
     
     async def receive(self, message) -> Dict[str, Any]:
         """
-        把伺服器回傳的JSON格式字串轉換成Dict
+        Parse the server's JSON string into a dict.
         
         Args:
             message (string)
@@ -563,7 +563,7 @@ class WebSocketClient:
 
 
     async def subscribe(self, channels: list[Dict[str, Any]], processor: MarketInfoProcessor = None) -> None:
-        # 推薦方式：使用實例變量
+        # Recommended: use the instance variable
         if processor is None:
             raise Exception("processor is required for subscribe.")
         

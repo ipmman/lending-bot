@@ -7,7 +7,7 @@ def _offer(offer_id):
 
 
 async def test_empty_snapshot_clears_stale_offers():
-    """重連後交易所回 [0,"fos",[]]：斷線期間已成交/取消的掛單不能殘留"""
+    """After a reconnect the exchange sends [0,"fos",[]]: offers filled or cancelled while disconnected must not linger"""
     om = OrderManager(None, None, None)
     await om._handle_snapshot([_offer(111)])
 

@@ -20,7 +20,7 @@ class _FakeClient:
 
 
 async def _authenticate(reply):
-    # Bitfinex 實際順序：auth 回應(dict) 之後才是各種 channel 0 快照
+    # Real Bitfinex order: the auth reply (dict) arrives before the channel 0 snapshots
     auth_client = _FakeClient([reply, [0, "ps", []], [0, "n", [0, "fon-req"]], [0, "bu", [0, 0]]])
     dispatcher = MessageDispatcher(auth_client, _FakeClient([]))
     dispatch_task = asyncio.create_task(dispatcher.dispatch_messages())
@@ -51,7 +51,7 @@ async def test_rejected_request_reason_is_logged(caplog):
 
 
 async def test_stuck_watchdog_cancels_only_the_reconnection(monkeypatch):
-    """看門狗取消卡住的重連時，呼叫者（reconnection_monitor / 接收器）要拿到 False 繼續重試，不能被一起取消"""
+    """When the watchdog cancels a stuck reconnect, the caller (reconnection_monitor / receiver) must get False and keep retrying, not be cancelled with it"""
     async def hang(*args, **kwargs):
         await asyncio.sleep(3600)
 

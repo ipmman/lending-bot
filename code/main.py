@@ -18,41 +18,41 @@ from rate_calculator import calculate_rate
 
 
 
-# 添加超時常量
-RECONNECTION_REQUEST_TIMEOUT = 5.0  # 請求重連時的鎖獲取超時
+# Timeout constants
+RECONNECTION_REQUEST_TIMEOUT = 5.0  # Lock acquisition timeout when requesting a reconnect
 
-# 初始化 logging
+# Initialize logging
 filename = "main_dev.log" if config.ENVIRONMENT == "development" else "main.log"
 setup_logging(log_level=config.LOGGING_LEVEL, 
               log_file=fr"./logs/{filename}")
 
-# 獲取子logger
+# Get a child logger
 logger = logging.getLogger(__name__)
 
 
 """
 TODO:
-        1. 階梯式掛單，不要一次性使用全部資金 -- 還沒有這麼多錢 :)
-        2. smart candles 策略目前刻意停用/暫存;
-           在 FRR/Active 主流程穩定且補測試前，不要把 candles 接回主流程。
+        1. Laddered offers instead of using all funds at once -- not that much money yet :)
+        2. The smart candles strategy is intentionally disabled/parked for now;
+           do not wire candles back into the main flow until the FRR/Active flow is stable and tested.
 """
 
 
 
 
 async def reconnection_monitor(reconnect_queue, pub_client, auth_client, market_info_processor):
-    """背景任務 - 監控並處理重新連線請求，使用隊列機制"""
+    """Background task - monitor and handle reconnect requests via a queue"""
     
-    # 新增：按連接類型的指數退避策略
+    # Exponential backoff per connection type
     reconnect_backoffs = {
         "pub": ExponentialBackoff(base_delay=5, max_delay=120, max_retries=10, jitter=True),
         "auth": ExponentialBackoff(base_delay=5, max_delay=120, max_retries=10, jitter=True)
     }
     
     while True:
-        # 改用隊列機制：從隊列獲取重連請求
+        # Take reconnect requests from the queue
         client_type = await reconnect_queue.get()
-        # 佇列裡同類型的重複請求一次處理掉，避免恢復連線後連續重連；其他類型放回佇列
+        # Drain duplicate requests of the same type at once to avoid back-to-back reconnects after recovery; requeue other types
         other_requests = []
         while not reconnect_queue.empty():
             pending = reconnect_queue.get_nowait()
@@ -65,7 +65,7 @@ async def reconnection_monitor(reconnect_queue, pub_client, auth_client, market_
         instance_id = client.instance_id
         backoff = reconnect_backoffs[client_type]
         
-        # 檢查是否已有重連任務在進行
+        # Check whether a reconnect task is already in progress
         should_attempt_reconnect = False
         existing_task = None
         async with WebSocketClient._reconnect_locks[client_type]:
@@ -75,11 +75,11 @@ async def reconnection_monitor(reconnect_queue, pub_client, auth_client, market_
                 existing_task = WebSocketClient._reconnection_tasks.get(client_type)
         
         if existing_task and not existing_task.done():
-            logger.warning(f"{client_type} 客戶端已有重連任務在進行中，跳過重複請求 (實例ID: {instance_id})")
+            logger.warning(f"{client_type} client already has a reconnect task in progress, skipping duplicate request (instance ID: {instance_id})")
             continue
         
         if should_attempt_reconnect and client:
-            logger.warning(f"執行重新連線請求: {client_type} 客戶端 (實例ID: {instance_id})")
+            logger.warning(f"Handling reconnect request: {client_type} client (instance ID: {instance_id})")
             try:          
                 success = await client.ensure_connection(
                     authenticator=client.authenticator if client_type == "auth" else None,
@@ -89,71 +89,71 @@ async def reconnection_monitor(reconnect_queue, pub_client, auth_client, market_
                 )
                 
                 if success:
-                    logger.info(f"{client_type} 重新連線成功 (實例ID: {instance_id})")
-                    # 重連成功，重置退避計數器
+                    logger.info(f"{client_type} reconnected successfully (instance ID: {instance_id})")
+                    # Reconnected; reset the backoff counter
                     backoff.success()
-                    await asyncio.sleep(10.0)  # 成功後短暫等待
+                    await asyncio.sleep(10.0)  # Brief pause after success
                 else:
-                    logger.error(f"{client_type} 重新連線失敗... (實例ID: {instance_id})")
-                    # 重連失敗，使用指數退避策略
-                    await backoff.wait(f"{client_type} 重連失敗")
+                    logger.error(f"{client_type} reconnect failed... (instance ID: {instance_id})")
+                    # Reconnect failed; apply exponential backoff
+                    await backoff.wait(f"{client_type} reconnect failed, ")
                     
             except Exception as e:
-                logger.error(f"{client_type} 重連過程中發生錯誤: {e} (實例ID: {instance_id})")
-                logger.error(f"完整錯誤信息: {traceback.format_exc()}")
-                # 發生異常，也使用指數退避策略
-                await backoff.wait(f"{client_type} 重連異常")
+                logger.error(f"{client_type} error during reconnect: {e} (instance ID: {instance_id})")
+                logger.error(f"Full traceback: {traceback.format_exc()}")
+                # On exception, also apply exponential backoff
+                await backoff.wait(f"{client_type} reconnect error, ")
         else:
-            logger.debug(f"{client_type} 客戶端重連條件不滿足，跳過此次重連請求 (實例ID: {instance_id})")
-            # 條件不滿足時使用較短的等待時間
+            logger.debug(f"{client_type} client does not meet reconnect conditions, skipping this request (instance ID: {instance_id})")
+            # Use a shorter wait when conditions are not met
             await asyncio.sleep(2.0)
 
             
 async def market_info_task(market_info_processor, market_queue):
-    """背景任務 - 持續更新市場資訊，不阻塞主流程"""
-    logger.info("啟動市場資訊背景任務...")
+    """Background task - keep market data updated without blocking the main flow"""
+    logger.info("Starting market data background task...")
     
     while True:
         try:
             await market_info_processor.handle_market_messages(market_queue)
                 
         except Exception as e:
-            logger.error(f"處理市場消息時發生錯誤: {e}")
-            logger.error(f"完整錯誤信息: {traceback.format_exc()}")
+            logger.error(f"Error handling market messages: {e}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             await asyncio.sleep(5.0)
 
 
-# 處理掛單簿的背景任務
+# Background task for the order book
 async def order_management_task(order_manager, fo_queue):
-    """背景任務 - 處理掛單相關的消息"""
-    logger.info("啟動掛單管理背景任務...")
+    """Background task - handle offer-related messages"""
+    logger.info("Starting offer management background task...")
     
     while True:
         try:
             await order_manager.handle_fo_messages(fo_queue)
             
         except Exception as e:
-            logger.error(f"掛單管理任務出錯: {e}")
-            logger.error(f"完整錯誤信息: {traceback.format_exc()}")
+            logger.error(f"Offer management task error: {e}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             await asyncio.sleep(5.0)
         
         
-# 處理餘額的背景任務
+# Background task for balances
 async def wallet_manager_task(wallet_manager, wallet_queue):
-    """背景任務 - 處理錢包相關的消息"""
-    logger.info("啟動錢包管理背景任務...")
+    """Background task - handle wallet-related messages"""
+    logger.info("Starting wallet management background task...")
     
     while True:
         try:
             await wallet_manager.handle_wallet_messages(wallet_queue)
         
         except Exception as e:
-            logger.error(f"錢包管理任務出錯: {e}")
-            logger.error(f"完整錯誤信息: {traceback.format_exc()}")
+            logger.error(f"Wallet management task error: {e}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             await asyncio.sleep(5)
 
 
-# 掛單邏輯
+# Offer placement logic
 async def place_order(order_manager,
                       ticker_stats,
                       funding_balance,
@@ -174,7 +174,7 @@ async def place_order(order_manager,
             book_rate=book_rate,
         )
 
-        logger.info(f"開始掛單: {funding_balance:.2f} {symbol} | 年利率: {desired_rate*365*100:.4f}% | 日利率: {desired_rate*100:.6f}% | 掛單期限: {days}天 | 策略: {mode}")
+        logger.info(f"Placing offer: {funding_balance:.2f} {symbol} | Annual rate: {desired_rate*365*100:.4f}% | Daily rate: {desired_rate*100:.6f}% | Period: {days} days | Strategy: {mode}")
 
         await order_manager.new_funding_offer(
             symbol,
@@ -182,44 +182,44 @@ async def place_order(order_manager,
             desired_rate,
             days
         )
-        logger.info("**掛單成功**")
+        logger.info("**Offer placed**")
         return True
 
     except Exception as e:
-        logger.error(f"掛單失敗: {e}")
-        logger.error(f"完整錯誤信息: {traceback.format_exc()}")
+        logger.error(f"Failed to place offer: {e}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return False
 
 
 async def handle_cancel_order_timeout(order_manager, active_id, counter_cancel, timeout_seconds):
     """
-    處理掛單逾時邏輯，回傳 (new_counter_cancel, success or not)
+    Handle an offer timeout; returns (new_counter_cancel, success or not)
     """
     instance_id = order_manager.websocket_client.instance_id
     try:
         await order_manager.cancel_funding_offer(active_id)
-        logger.info(f"掛單未成交時間超過{timeout_seconds:.0f}秒，已取消掛單")
+        logger.info(f"Offer unfilled for over {timeout_seconds:.0f}s; offer cancelled")
         return 0, True
     
     except Exception as e:
-        logger.error(f"取消掛單時發生錯誤，將繼續運行: {e}")
-        # 在重連期間不計錯誤次數
-        # 避免死鎖，先檢查鎖狀態
+        logger.error(f"Error cancelling offer, continuing: {e}")
+        # Don't count errors during a reconnect
+        # Check the lock state first to avoid deadlock
         is_reconnecting = False
         async with WebSocketClient._reconnect_locks["auth"]:
             is_reconnecting = WebSocketClient._reconnecting.get("auth", False)
 
-        # 檢查完鎖狀態後再進行處理
+        # Proceed only after checking the lock state
         if not is_reconnecting:
             counter_cancel += 1
-            # 連續失敗超過 5 次，觸發重新連線
+            # More than 5 consecutive failures triggers a reconnect
             if counter_cancel > 5:
-                logger.error(f"`取消掛單`任務，出錯超過連續5次，請求重新連線... (實例ID: {instance_id})")
+                logger.error(f"`cancel offer` task failed more than 5 times in a row, requesting reconnect... (instance ID: {instance_id})")
                 raise
         else:
-            logger.warning(f"取消掛單錯誤發生於重新連線期間，本次不計入錯誤次數。 (實例ID: {instance_id})")
+            logger.warning(f"Offer cancel error occurred during reconnect; not counted as an error this time. (instance ID: {instance_id})")
             
-        return counter_cancel, False  # 跳到下一輪迴圈
+        return counter_cancel, False  # Skip to the next loop iteration
 
 
 async def lending_engine(order_manager, 
@@ -227,31 +227,31 @@ async def lending_engine(order_manager,
                          wallet_manager, 
                          reconnect_queue,
                          pub_client, auth_client):
-    """進階版本：FRR → Active → 熔斷機制"""
+    """Advanced version: FRR → Active → circuit breaker"""
     
     # NOTE: Bitfinex production uses UST for USDT; config.SYMBOL normalizes it.
     symbol = f"TEST{config.SYMBOL}" if config.ENVIRONMENT == "development" else config.SYMBOL
-    counter_cancel = 0  # 取消掛單的錯誤計數
+    counter_cancel = 0  # Error count for offer cancellation
     
-    # 新增：掛單策略管理變數
-    current_mode = "frr"  # 可能值: frr, active, paused
-    frr_failure_count = 0  # FRR 掛單失敗次數
-    active_attempt_count = 0  # 主動搶單嘗試次數
+    # Offer strategy state
+    current_mode = "frr"  # One of: frr, active, paused
+    frr_failure_count = 0  # FRR offer failure count
+    active_attempt_count = 0  # Active mode attempt count
     circuit_breaker_triggered = False
     circuit_breaker_start_time = None
-    # 記錄每個訂單掛單時的模式，避免模式切換後誤用錯誤的 timeout
+    # Mode each order was placed in, so a mode switch doesn't apply the wrong timeout
     order_modes: dict[int, str] = {}
-    # 已算過一次成功的部分成交掛單，避免每輪重複重置策略狀態
+    # Partially filled offers already counted as a success, so strategy state isn't reset every iteration
     partially_filled_ids: set[int] = set()
     last_heartbeat = datetime.now()
     
-    # 策略參數 - 從配置文件讀取
+    # Strategy parameters - read from config
     FRR_FAILURE_THRESHOLD = config.FRR_FAILURE_THRESHOLD
     ACTIVE_MAX_ATTEMPTS = config.ACTIVE_MAX_ATTEMPTS
     ACTIVE_ORDER_TIMEOUT = config.ACTIVE_ORDER_TIMEOUT
     CIRCUIT_BREAKER_DURATION = config.CIRCUIT_BREAKER_DURATION
     
-    # 指數退避策略實例
+    # Exponential backoff instance
     error_backoff = ExponentialBackoff(
         base_delay=30, 
         max_delay=300, 
@@ -264,70 +264,70 @@ async def lending_engine(order_manager,
             logger.debug("-----------------------------------------------------------------")
             logger.debug(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             
-            # 檢查熔斷機制狀態
+            # Check circuit breaker state
             if circuit_breaker_triggered:
                 if circuit_breaker_start_time:
                     elapsed = (datetime.now() - circuit_breaker_start_time).total_seconds()
                     if elapsed >= CIRCUIT_BREAKER_DURATION:
-                        # 熔斷結束，重置所有狀態
+                        # Circuit breaker over; reset all state
                         circuit_breaker_triggered = False
                         circuit_breaker_start_time = None
                         current_mode = "frr"
                         frr_failure_count = 0
                         active_attempt_count = 0
-                        logger.info("熔斷機制結束，重置策略狀態，回到 FRR 模式")
+                        logger.info("Circuit breaker ended; strategy state reset, back to FRR mode")
                     else:
                         remaining = CIRCUIT_BREAKER_DURATION - elapsed
-                        logger.debug(f"熔斷機制進行中，剩餘 {remaining:.1f} 秒")
+                        logger.debug(f"Circuit breaker active, {remaining:.1f}s remaining")
                         await asyncio.sleep(config.MAIN_LOOP_DELAY)
                         continue
             
-            # 確保市場資訊處理器狀態已滿足
+            # Make sure the market data processor state is ready
             _, ask_ids = await order_manager.get_active_order_ids(symbol)
             
-            # 新增標記來追蹤本輪循環的狀態
+            # Flags tracking the state of this iteration
             any_order_executed = False
             stop_processing_orders = False
             
             if ask_ids:
-                # 清掉已不存在於活躍清單的訂單記錄
+                # Drop records for orders no longer in the active list
                 active_set = set(ask_ids)
                 for stale_id in [oid for oid in order_modes if oid not in active_set]:
                     order_modes.pop(stale_id, None)
                 partially_filled_ids &= active_set
 
                 for ask_id in ask_ids:
-                    # 檢查掛單是否已成交
+                    # Check whether the offer has been filled
                     is_executed, execution_status, offer_info = await order_manager.check_order_executed(ask_id)
 
                     if is_executed and 'EXECUTED' in execution_status:
-                        # 掛單完全成交！標記成功，但繼續檢查其他掛單
-                        logger.info(f"掛單成交 | 狀態: {execution_status} | ID: {ask_id}")
+                        # Offer fully filled! Mark success, but keep checking the other offers
+                        logger.info(f"Offer filled | Status: {execution_status} | ID: {ask_id}")
                         order_modes.pop(ask_id, None)
                         any_order_executed = True
-                        continue  # 檢查下一個 ask_id
+                        continue  # Check the next ask_id
 
                     if is_executed and ask_id not in partially_filled_ids:
-                        # 部分成交：每筆掛單只算一次成功；剩餘部分照常走下面的逾時取消，下一輪重掛
-                        logger.info(f"掛單部分成交 | 狀態: {execution_status} | ID: {ask_id}")
+                        # Partially filled: each offer counts as a success only once; the remainder goes through the timeout cancel below and is re-placed next iteration
+                        logger.info(f"Offer partially filled | Status: {execution_status} | ID: {ask_id}")
                         partially_filled_ids.add(ask_id)
                         any_order_executed = True
 
-                    # ----- 如果未完全成交，才繼續處理超時邏輯 -----
+                    # ----- Only if not fully filled, proceed with timeout handling -----
                     last_update_time = await order_manager.get_order_update_time(ask_id)
                     if last_update_time:
                         time_diff = get_elapsed_time(last_update_time)
-                        logger.debug(f"掛單ID: {ask_id} | 未成交時間: {format_elapsed_time(time_diff)}")
+                        logger.debug(f"Offer ID: {ask_id} | Unfilled for: {format_elapsed_time(time_diff)}")
                     else:
-                        logger.warning(f"掛單ID: {ask_id} | 未找到更新時間")
+                        logger.warning(f"Offer ID: {ask_id} | No update time found")
                         continue
 
-                    # 用「掛單時的模式」判斷 timeout，避免模式切換後誤殺
-                    # 未知來源訂單（例如重啟前留下的、或下單後 snapshot 沒對到的）
-                    # 保守使用較長的 FRR timeout；同時記 WARNING 觀察觸發頻率
+                    # Pick the timeout by the mode the offer was placed in, so a mode switch doesn't cancel it by mistake
+                    # Orders of unknown origin (e.g. left over from before a restart, or missed by the post-placement snapshot)
+                    # conservatively fall back to the longer FRR timeout, and log a WARNING to track how often this happens
                     placed_mode = order_modes.get(ask_id)
                     if placed_mode is None:
-                        logger.warning(f"掛單 {ask_id} 缺少模式記錄，fallback 為 frr (timeout={config.FRR_ORDER_TIMEOUT}分)")
+                        logger.warning(f"Offer {ask_id} has no recorded mode, falling back to frr (timeout={config.FRR_ORDER_TIMEOUT} min)")
                         placed_mode = "frr"
                     if placed_mode == "active":
                         timeout_seconds = ACTIVE_ORDER_TIMEOUT
@@ -335,121 +335,121 @@ async def lending_engine(order_manager,
                         timeout_seconds = 60.0 * config.FRR_ORDER_TIMEOUT
                     timeout_condition = time_diff and time_diff["total_seconds"] > timeout_seconds
 
-                    # 處理掛單超時
+                    # Handle offer timeout
                     if timeout_condition:
                         counter_cancel, cancel_success = await handle_cancel_order_timeout(
                             order_manager, ask_id, counter_cancel, timeout_seconds
                         )
 
                         if not cancel_success:
-                            # 取消掛單失敗(系統錯誤)，應停止本輪訂單處理
-                            logger.warning(f"取消掛單 {ask_id} 失敗，暫停本輪訂單處理，等待下一輪主循環。")
+                            # Cancel failed (system error); stop processing orders this iteration
+                            logger.warning(f"Failed to cancel offer {ask_id}; pausing order processing until the next main loop iteration.")
                             stop_processing_orders = True
-                            break  # 跳出 for 迴圈
+                            break  # Break out of the for loop
                         else:
-                            # 訂單因超時被成功取消(策略失敗)，依「掛單時的模式」更新失敗計數
+                            # Order cancelled on timeout (strategy failure); update the failure count for the mode it was placed in
                             order_modes.pop(ask_id, None)
                             if placed_mode == "frr":
                                 frr_failure_count += 1
                             elif placed_mode == "active":
                                 active_attempt_count += 1
                 
-                # 在迴圈後檢查旗標
+                # Check the flags after the loop
                 if stop_processing_orders:
                     await asyncio.sleep(config.MAIN_LOOP_DELAY)
-                    continue  # 繼續 while 主循環
+                    continue  # Continue the main while loop
 
                 if any_order_executed:
-                    logger.info("偵測到掛單成交")
+                    logger.info("Offer fill detected")
                     frr_failure_count = 0
                     active_attempt_count = 0
                     current_mode = "frr"
 
-            # 模式切換：FRR → Active → 熔斷
+            # Mode switching: FRR → Active → circuit breaker
             if current_mode == "frr":
                 if frr_failure_count >= FRR_FAILURE_THRESHOLD:
                     current_mode = "active"
                     active_attempt_count = 0
-                    logger.info(f"FRR 模式失敗 {FRR_FAILURE_THRESHOLD} 次，切換到主動搶單模式")
+                    logger.info(f"FRR mode failed {FRR_FAILURE_THRESHOLD} times, switching to Active mode")
                     
             elif current_mode == "active":
                 if active_attempt_count >= ACTIVE_MAX_ATTEMPTS:
-                    # 觸發熔斷機制
+                    # Trip the circuit breaker
                     circuit_breaker_triggered = True
                     circuit_breaker_start_time = datetime.now()
-                    logger.warning(f"主動搶單失敗 {ACTIVE_MAX_ATTEMPTS} 次，觸發熔斷機制！暫停 {CIRCUIT_BREAKER_DURATION} 秒")
+                    logger.warning(f"Active mode failed {ACTIVE_MAX_ATTEMPTS} times, circuit breaker tripped! Pausing for {CIRCUIT_BREAKER_DURATION}s")
                     await asyncio.sleep(config.MAIN_LOOP_DELAY)
                     continue
 
                     
-            # 獲取最新餘額
+            # Fetch the latest balance
             balances_available = await wallet_manager.get_wallet_balances(symbol, wait_for_update=True, timeout=2.0)
             funding_balance = balances_available.get("funding", 0.0)
             
             if funding_balance is None:
                 funding_balance = 0.0
             
-            logger.debug(f"當前可用餘額: {funding_balance:.4f} {symbol}")
+            logger.debug(f"Available balance: {funding_balance:.4f} {symbol}")
 
-            # 根據策略模式決定是否需要市場資訊
+            # Decide whether market data is needed based on the strategy mode
             ticker_data = None
             ticker_stats = None
             last_update = None
             
             if current_mode == "active":
-                # Active 模式只需要 book_rate，直接獲取
-                logger.debug("Active 模式：直接獲取掛單簿資訊，跳過市場資訊等待")
+                # Active mode only needs book_rate; fetch it directly
+                logger.debug("Active mode: fetching book data directly, skipping the wait for market data")
                 book_data, book_rate = await market_info_processor.get_book_info(timeout=30)
             else:
-                # FRR 或其他模式需要完整市場資訊
+                # FRR and other modes need full market data
                 ticker_data, ticker_stats = await market_info_processor.get_ticker_info(timeout=config.MARKET_DATA_FETCH_TIMEOUT * 60)
                 
                 last_update = ticker_data.get("LAST_UPDATE_TIME", None)
                 book_data, book_rate = await market_info_processor.get_book_info(timeout=30)
                 # _, candles_stats = await market_info_processor.get_candles_info(timeout=30)
 
-                # 檢查數據新鮮度
+                # Check data freshness
                 if last_update:
                     age = (datetime.now() - last_update).total_seconds()
                     
                     if age > config.MARKET_DATA_CRITICAL_STALE_MINUTES * 60:
                         instance_id = pub_client.instance_id
-                        logger.warning(f"市場資訊嚴重過期（{age/60:.1f}分鐘），請求重新連接... (實例ID: {instance_id})")
-                        # 通過隊列觸發重連，避免死鎖風險
+                        logger.warning(f"Market data critically stale ({age/60:.1f} min), requesting reconnect... (instance ID: {instance_id})")
+                        # Trigger the reconnect via the queue to avoid deadlock risk
                         try:
                             async with asyncio.timeout(RECONNECTION_REQUEST_TIMEOUT):
                                 async with WebSocketClient._reconnect_locks["pub"]:
                                     if not WebSocketClient._reconnecting["pub"]:
                                         await reconnect_queue.put("pub")
-                                        logger.info(f"已觸發 pub client 重連 (實例ID: {instance_id})")
+                                        logger.info(f"Triggered pub client reconnect (instance ID: {instance_id})")
                         except asyncio.TimeoutError:
-                            logger.warning(f"觸發重連請求超時，跳過本次請求 (實例ID: {instance_id})")
-                        # 繼續當前循環，等待下一輪檢查  
+                            logger.warning(f"Timed out triggering reconnect request, skipping this request (instance ID: {instance_id})")
+                        # Continue the loop and wait for the next check  
                         continue
                 
                     if age <= config.MARKET_INFO_MAX_AGE_MINUTES * 60:
-                        logger.debug(f"市場資訊新鮮，數據年齡: {age/60:.1f}分鐘")
+                        logger.debug(f"Market data is fresh, age: {age/60:.1f} min")
                     else:
-                        logger.debug(f"市場資訊（數據年齡: {age/60:.1f}分鐘）超過{config.MARKET_INFO_MAX_AGE_MINUTES}分鐘未更新，等待數據更新...")
+                        logger.debug(f"Market data (age: {age/60:.1f} min) not updated for over {config.MARKET_INFO_MAX_AGE_MINUTES} min, waiting for an update...")
                         continue
                 else:
-                    logger.debug("尚未獲取有效的市場資訊，等待下次循環...")
+                    logger.debug("No valid market data yet, waiting for the next iteration...")
                     continue
             
-            # 掛單處理
+            # Offer placement
             if funding_balance and funding_balance >= 150.0:
                 if current_mode == "frr":
-                    logger.debug(f"當前策略模式: {current_mode.upper()} - 失敗次數: {frr_failure_count}/{FRR_FAILURE_THRESHOLD}")
+                    logger.debug(f"Current strategy mode: {current_mode.upper()} - failure count: {frr_failure_count}/{FRR_FAILURE_THRESHOLD}")
                 elif current_mode == "active":
-                    logger.debug(f"當前策略模式: {current_mode.upper()} - 失敗次數: {active_attempt_count}/{ACTIVE_MAX_ATTEMPTS}")
+                    logger.debug(f"Current strategy mode: {current_mode.upper()} - failure count: {active_attempt_count}/{ACTIVE_MAX_ATTEMPTS}")
 
-                # 下單前快照現有訂單，以便下單後辨識新增的訂單並標記模式
+                # Snapshot existing orders before placing, so new ones can be identified and tagged with the mode afterwards
                 _, ask_ids_before = await order_manager.get_active_order_ids(symbol)
 
-                # Guard: 已有活躍掛單就跳過本輪下單，避免 wallet/offer 狀態不同步造成重複下單
+                # Guard: skip placing this iteration if an offer is already active, to avoid duplicate offers when wallet/offer state is out of sync
                 if ask_ids_before:
-                    logger.debug(f"已有 {len(ask_ids_before)} 筆活躍掛單，本輪跳過下單")
-                    # 等成交期間也算正常運作，先把錯誤計數歸零再 continue
+                    logger.debug(f"Found {len(ask_ids_before)} active offer(s), skipping placement this iteration")
+                    # Waiting for a fill counts as normal operation, so reset the error counters before continuing
                     counter_cancel = 0
                     error_backoff.success()
                     await asyncio.sleep(config.MAIN_LOOP_DELAY)
@@ -459,30 +459,30 @@ async def lending_engine(order_manager,
                     candles_stats=None, book_rate=book_rate, mode=current_mode)
 
                 if not place_success:
-                    logger.warning(f"掛單提交失敗，將在下一輪重試。")
+                    logger.warning(f"Offer submission failed, will retry next iteration.")
                 else:
-                    logger.info(f"掛單提交成功！等待成交...")
+                    logger.info(f"Offer submitted! Waiting for it to fill...")
                     _, ask_ids_after = await order_manager.get_active_order_ids(symbol)
                     for new_id in set(ask_ids_after) - set(ask_ids_before):
                         order_modes[new_id] = current_mode
             else:
-                logger.debug("餘額不足，最低掛單金額為 150.0 美元或等值的 USDT，等待下一輪...")
+                logger.debug("Insufficient balance; the minimum offer is 150.0 USD or the USDT equivalent, waiting for the next iteration...")
 
             
-            # 當前市場資訊（僅在非 active 模式下顯示）
+            # Current market data (shown only outside active mode)
             if ticker_stats:
-                logger.debug(f"{'USDT' if symbol == 'UST' else symbol} 市場數據:")
+                logger.debug(f"{'USDT' if symbol == 'UST' else symbol} market data:")
                 logger.debug(f"  FRR (Year): {ticker_stats['frr_yearly']:.4f}%")
                 logger.debug(f"  Low Rate (Year): {ticker_stats['low_rate_yearly']:.4f}%")
                 logger.debug(f"  High Rate (Year): {ticker_stats['high_rate_yearly']:.4f}%")
             else:
-                logger.debug(f"{current_mode.upper()} 模式：跳過市場數據顯示")
+                logger.debug(f"{current_mode.upper()} mode: skipping market data display")
             
-            # success, 重置計數器
+            # success, reset counters
             counter_cancel = 0
-            error_backoff.success()  # 重置退避計數器
+            error_backoff.success()  # Reset the backoff counter
 
-            # 心跳：每 HEARTBEAT_INTERVAL 秒印一行 INFO summary，避免 DEBUG 洗版
+            # Heartbeat: log a one-line INFO summary every HEARTBEAT_INTERVAL seconds instead of flooding DEBUG
             if config.HEARTBEAT_INTERVAL > 0:
                 now = datetime.now()
                 if (now - last_heartbeat).total_seconds() >= config.HEARTBEAT_INTERVAL:
@@ -501,104 +501,104 @@ async def lending_engine(order_manager,
                     logger.info("heartbeat | " + " | ".join(parts))
                     last_heartbeat = now
 
-            # 短暫休眠後再次檢查
+            # Sleep briefly before checking again
             await asyncio.sleep(config.MAIN_LOOP_DELAY)
             
         except Exception as e:
-            logger.error(f"`lending_engine`出錯: {type(e).__name__}: {e}\n{traceback.format_exc()}")    
+            logger.error(f"`lending_engine` error: {type(e).__name__}: {e}\n{traceback.format_exc()}")    
             
-            # 按鎖順序檢查客戶端，engine 出錯兩個都可能有問題
+            # Check clients in lock order; an engine error may mean either one is broken
             reconnection_triggered = False
             for client_type in LOCK_ORDER:  # ["auth", "pub"]
                 try:
                     client = auth_client if client_type == "auth" else pub_client
                     instance_id = client.instance_id
                     
-                    # 使用超時避免永久等待
+                    # Use a timeout to avoid waiting forever
                     async with asyncio.timeout(RECONNECTION_REQUEST_TIMEOUT):
                         async with WebSocketClient._reconnect_locks[client_type]:
                             if not WebSocketClient._reconnecting[client_type]:
-                                logger.error(f"觸發重新連線: {client_type} 客戶端 (實例ID: {instance_id})")
+                                logger.error(f"Triggering reconnect: {client_type} client (instance ID: {instance_id})")
                                 await reconnect_queue.put(client_type)
                                 reconnection_triggered = True
-                                # 移除 break，讓兩個客戶端都有機會被檢查
+                                # No break here, so both clients get checked
                                 
                 except asyncio.TimeoutError:
-                    logger.warning(f"獲取 {client_type} 鎖超時，跳過 (實例ID: {instance_id})")
+                    logger.warning(f"Timed out acquiring {client_type} lock, skipping (instance ID: {instance_id})")
                     continue
                 
                 except Exception as lock_error:
-                    logger.error(f"檢查 {client_type} 重連狀態時出錯: {lock_error} (實例ID: {instance_id})")
+                    logger.error(f"Error checking {client_type} reconnect state: {lock_error} (instance ID: {instance_id})")
                     continue
             
             if not reconnection_triggered:
-                logger.warning("無法觸發任何重連，所有客戶端可能都在重連中")
+                logger.warning("Could not trigger any reconnect; all clients may already be reconnecting")
             
-            # 短暫休眠後繼續嘗試
+            # Sleep briefly, then keep trying
             await asyncio.sleep(config.MAIN_LOOP_DELAY * 2)
-            logger.error("`lending_engine`出錯，進入指數退避等待模式...")
-            # 使用指數退避策略替代固定等待時間
+            logger.error("`lending_engine` error, entering exponential backoff...")
+            # Exponential backoff instead of a fixed wait
             await error_backoff.wait("`lending_engine` ")
   
 
 async def reconnection_state_monitor():
-    """背景任務 - 定期檢查並重置可能卡住的重連狀態"""
-    logger.info("啟動重連狀態監控任務...")
+    """Background task - periodically check for and reset stuck reconnect state"""
+    logger.info("Starting reconnect state monitor task...")
     
     while True:
         try:
-            # 每60秒檢查一次
+            # Check every 60 seconds
             await asyncio.sleep(60)
             await WebSocketClient.check_stuck_reconnecting()
         except Exception as e:
-            # 這個任務沒有對應的 WebSocket 實例，保持使用任務ID
+            # This task has no WebSocket instance, so keep using the task ID
             task_id = id(asyncio.current_task())
-            logger.error(f"重連狀態監控任務出錯: {e} (任務ID: {task_id})")
-            await asyncio.sleep(60)  # 發生錯誤後等待一段時間再繼續
+            logger.error(f"Reconnect state monitor task error: {e} (task ID: {task_id})")
+            await asyncio.sleep(60)  # Wait a while after an error before continuing
 
 
 async def main():
-    # 初始化重連狀態，確保啟動時所有重連標誌都是清理的狀態
+    # Initialize reconnect state so all reconnect flags start clean
     task_id = id(asyncio.current_task())
     for conn_type in ["pub", "auth"]:
         async with WebSocketClient._reconnect_locks[conn_type]:
             if WebSocketClient._reconnecting[conn_type]:
-                logger.warning(f"啟動時發現 {conn_type} 連接的重連狀態為 True，重置為 False (任務ID: {task_id})")
+                logger.warning(f"At startup, {conn_type} reconnect state was True; resetting to False (task ID: {task_id})")
                 WebSocketClient._reconnecting[conn_type] = False
     
-    # 建立 WebSocket 客戶端
+    # Create WebSocket clients
     auth_ws_client = WebSocketClient(config.AUTH_URI, uri_type="auth")
     public_ws_client = WebSocketClient(config.PUBLIC_URI, uri_type="pub")
-    # 改用隊列機制替代事件+字典
+    # Reconnect requests go through a queue
     reconnect_queue = asyncio.Queue()
     
-    # 創建 MessageDispatcher
+    # Create the MessageDispatcher
     dispatcher = MessageDispatcher(auth_ws_client, public_ws_client)
     
-    # 建立其他模組實例
+    # Create the other module instances
     authenticator = Authenticator(config.API_KEY, config.API_SECRET)
     market_info_processor = MarketInfoProcessor()
     order_manager = OrderManager(auth_ws_client, authenticator, dispatcher)
     wallet_manager = WalletManager(auth_ws_client, authenticator, dispatcher)
     
-    # 設置依賴
+    # Wire up dependencies
     auth_ws_client.set_dispatcher(dispatcher)
     public_ws_client.set_processor(market_info_processor)
     market_info_processor.set_reconnect_queue(reconnect_queue)
     
-    # 建立認證連線；啟動時連不上就退避重試，直到連上
+    # Open the auth connection; if that fails at startup, back off and retry until connected
     auth_filter = list(config.AUTH_FILTER) if config.AUTH_FILTER else None
     startup_backoff = ExponentialBackoff(base_delay=5, max_delay=120, max_retries=10, jitter=True)
     while not await auth_ws_client.connect(authenticator, auth_filter=auth_filter):
-        await startup_backoff.wait("啟動時認證連線失敗，")
+        await startup_backoff.wait("Auth connection failed at startup, ")
 
-    # 建立公開連線
+    # Open the public connection
     startup_backoff.reset()
     while not await public_ws_client.connect():
-        await startup_backoff.wait("啟動時公開連線失敗，")
-    await public_ws_client.subscribe(config.CHANNELS, market_info_processor)  # 傳遞processor實例
+        await startup_backoff.wait("Public connection failed at startup, ")
+    await public_ws_client.subscribe(config.CHANNELS, market_info_processor)  # Pass the processor instance
     
-    # 啟動監聽任務
+    # Start listener tasks
     market_task = asyncio.create_task(
         market_info_task(market_info_processor, dispatcher.market_queue)
     )
@@ -622,12 +622,12 @@ async def main():
                              market_info_processor)
     )
     
-    # 添加重連狀態監控任務
+    # Add the reconnect state monitor task
     reconnect_state_monitor_task = asyncio.create_task(
         reconnection_state_monitor()
     )
     
-    # server回傳訊息需要時間，故放此處
+    # The server takes time to respond, so this goes here
     await authenticator.authenticate(auth_ws_client, auth_filter=auth_filter, dispatcher=dispatcher)
    
     tasks = [
@@ -637,28 +637,28 @@ async def main():
         wallet_task,
         lending_engine_task,
         reconnect_task,
-        reconnect_state_monitor_task  # 添加到任務列表
+        reconnect_state_monitor_task  # Watchdog for stuck reconnects
     ]
-    # 主循環
+    # Main loop
     try:
         
         await asyncio.gather(*tasks)
         
     except Exception as e:
-        logger.error(f"主循環出錯: {e}")
+        logger.error(f"Main loop error: {e}")
             
     finally:
-        # 清理資源
-        # 按照依賴關係的反向順序取消任務
-        # 任務依賴關係：lending_engine -> order/wallet -> dispatch -> market/reconnect
+        # Clean up resources
+        # Cancel tasks in reverse dependency order
+        # Task dependencies: lending_engine -> order/wallet -> dispatch -> market/reconnect
         cleanup_order = [
-            lending_engine_task,           # 最先取消主要業務邏輯
-            reconnect_state_monitor_task, # 取消監控重連狀態任務
-            reconnect_task,             # 取消重連任務
-            order_task,                 # 取消訂單處理
-            wallet_task,                # 取消錢包處理
-            dispatch_task,              # 取消消息分發
-            market_task,                # 最後取消市場數據
+            lending_engine_task,           # Cancel core business logic first
+            reconnect_state_monitor_task, # Cancel the reconnect state monitor
+            reconnect_task,             # Cancel reconnect handling
+            order_task,                 # Cancel order processing
+            wallet_task,                # Cancel wallet processing
+            dispatch_task,              # Cancel message dispatch
+            market_task,                # Cancel market data last
         ]
         
         for task in cleanup_order:
@@ -671,7 +671,7 @@ async def main():
                 except asyncio.TimeoutError:
                     pass
                 except Exception as e:
-                    logger.error(f"清理任務出錯: {e}")
+                    logger.error(f"Error cleaning up task: {e}")
         
         await public_ws_client.disconnect()
         await auth_ws_client.disconnect()

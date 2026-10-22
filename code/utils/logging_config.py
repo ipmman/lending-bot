@@ -3,17 +3,17 @@ import os
 from logging.handlers import RotatingFileHandler
 
 def setup_logging(log_level=logging.INFO, log_file="../logs/main.log"):
-    # 確保 log 目錄存在
+    # Make sure the log directory exists
     log_dir = os.path.dirname(log_file)
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
 
     logger = logging.getLogger()  # root logger
     logger.setLevel(log_level)
-    # websockets 在 DEBUG 會記錄每個 frame（含 auth 訊息的 apiKey），最低只開到 INFO
+    # At DEBUG, websockets logs every frame (including the apiKey in the auth message), so never go below INFO
     logging.getLogger("websockets").setLevel(max(log_level, logging.INFO))
 
-    # 清除現有的 handler，避免重複
+    # Clear existing handlers to avoid duplicates
     logger.handlers.clear()
     
     # RotatingFileHandler: 20MB per file, keep last 5 files
@@ -32,7 +32,7 @@ def setup_logging(log_level=logging.INFO, log_file="../logs/main.log"):
     stream_handler.setLevel(log_level)
     stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
-    # 添加 handler
+    # Add handlers
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
 

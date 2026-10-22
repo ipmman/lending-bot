@@ -47,8 +47,8 @@ def calculate_rate(
     else:
         desired_rate = min_rate
 
-    # 非 active 模式下，若盤口利率高於本模式算出的目標，改用盤口邏輯
-    # （book_rate 已是市場價，套 active 折扣即可，不需要 FRR 那種較深的讓利）
+    # Outside active mode, if the book rate is higher than this mode's target, use the book-rate logic instead
+    # (book_rate is already a market price, so the active discount is enough; no need for FRR's deeper discount)
     if mode != "active":
         if book_rate and (book_rate * active_rate_discount) > desired_rate:
             desired_rate = book_rate * active_rate_discount
@@ -78,22 +78,22 @@ def calculate_smart_rate(ticker_stats, candles_stats, min_rate):
 
         if volatility > 0.1:
             candles_rate = conservative_rate
-            logger.debug(f"高波動市場(波動率: {volatility:.3f})，採用保守策略")
+            logger.debug(f"High-volatility market (volatility: {volatility:.3f}); using conservative strategy")
         else:
             candles_rate = (conservative_rate + aggressive_rate) / 2
-            logger.debug(f"低波動市場(波動率: {volatility:.3f})，採用平衡策略")
+            logger.debug(f"Low-volatility market (volatility: {volatility:.3f}); using balanced strategy")
 
         # Weighted combination: FRR 55%, Candles 45%
         final_rate = (frr_rate * 0.55 + candles_rate * 0.45)
 
-        logger.debug(f"利率計算明細:")
-        logger.debug(f"  FRR年利率: {frr_rate*365*100:.4f}% (權重55%)")
-        logger.debug(f"  Candles年利率: {candles_rate*365*100:.4f}% (權重45%)")
-        logger.debug(f"  綜合年利率: {final_rate*365*100:.4f}%")
+        logger.debug(f"Rate calculation breakdown:")
+        logger.debug(f"  FRR annual rate: {frr_rate*365*100:.4f}% (weight 55%)")
+        logger.debug(f"  Candles annual rate: {candles_rate*365*100:.4f}% (weight 45%)")
+        logger.debug(f"  Combined annual rate: {final_rate*365*100:.4f}%")
 
     else:
         final_rate = frr_rate
-        logger.debug(f"使用備用策略（無Candles數據）: FRR {frr_rate*365*100:.4f}%")
+        logger.debug(f"Using fallback strategy (no candles data): FRR {frr_rate*365*100:.4f}%")
 
     final_rate = max(final_rate, min_rate)
     return final_rate

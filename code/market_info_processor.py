@@ -47,8 +47,8 @@ class MarketInfoProcessor:
         self.book_data_ready = asyncio.Event()
         self.reconnect_queue = None
         
-        self.enrolled_channels: DefaultDict[int, Dict[str, Any]] = defaultdict(dict)  # 紀錄訂閱的channels
-        self.received_channels = set()  # 追蹤已收到數據的 channel ID
+        self.enrolled_channels: DefaultDict[int, Dict[str, Any]] = defaultdict(dict)  # subscribed channels
+        self.received_channels = set()  # channel IDs that have received data
         self.desired_channels: int = 0
         
         
@@ -59,14 +59,14 @@ class MarketInfoProcessor:
     
     
     def reset_instance_data(self):
-        """重置實例數據，在重連時調用"""
+        """Reset instance data; called on reconnect."""
         self.ticker_data = {}
         self.candles_df = None
         self.book_df = None
         self.ticker_stats = {}
         self.candles_stats = {}
         self.channel_symbol_mapping = {}
-        # 清除事件狀態，等待新數據
+        # Clear event flags and wait for fresh data
         self.ticker_data_ready.clear()
         self.candles_data_ready.clear()
         self.book_data_ready.clear()
@@ -78,25 +78,25 @@ class MarketInfoProcessor:
     
     async def get_ticker_info(self, timeout: int = 600) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
-        安全地獲取最新的 ticker 數據、統計數據
+        Safely get the latest ticker data and statistics.
         
         Args:
-            timeout (float, optional): 等待數據的最大時間（秒），默認值為10分鐘。
+            timeout (float, optional): Maximum time to wait for data, in seconds. Defaults to 10 minutes.
                 
         Returns:
-            Tuple[Dict[str, Any], Dict[str, Any]]: ticker數據副本, 統計數據副本
-            如果超時且沒有數據，返回空字典
+            Tuple[Dict[str, Any], Dict[str, Any]]: copies of the ticker data and statistics.
+            Returns empty dicts if the wait times out and no data is available.
         """
         try:
-            # 使用超時設置等待數據
+            # Wait for data with a timeout
             await asyncio.wait_for(self.ticker_data_ready.wait(), timeout=timeout)
             self.ticker_data_ready.clear()
 
         except asyncio.TimeoutError:
-            logging.debug(f"返回當前市場數據，等待更新超時（{timeout}秒）")
+            logging.debug(f"Returning current market data; timed out waiting for an update ({timeout}s)")
         
         except Exception as e:
-            logging.error(f"獲取ticker數據時發生錯誤: {e}")
+            logging.error(f"Error fetching ticker data: {e}")
             raise
             
         async with self.market_lock:
@@ -104,13 +104,13 @@ class MarketInfoProcessor:
 
 
     async def get_candles_info(self, timeout: int = 30) -> Dict[str, Any]:
-        """獲取 candles 統計數據"""
+        """Get candles statistics."""
         try:
             await asyncio.wait_for(self.candles_data_ready.wait(), timeout=timeout)
             self.candles_data_ready.clear()
             
         except asyncio.TimeoutError:
-            logging.warning(f"返回當前可用數據，等待 candles 統計數據更新超時 ({timeout}秒)")
+            logging.warning(f"Returning currently available data; timed out waiting for a candles statistics update ({timeout}s)")
             
         async with self.market_lock:
             return self.candles_df.copy(), self.candles_stats.copy()
@@ -118,10 +118,10 @@ class MarketInfoProcessor:
     
     async def enroll_channel_id(self, data: Dict[str, Any]) -> None:
         """
-        設置已訂閱的channel ID
+        Register a subscribed channel ID.
 
         Args:
-            data (Dict[str, Any]): 伺服器回傳訂閱資料
+            data (Dict[str, Any]): subscription response from the server
         """
         chan_id = data.get("chanId")
         channel_type = data.get("channel")
@@ -133,13 +133,13 @@ class MarketInfoProcessor:
             
         
         if chan_id and symbol:
-            self.enrolled_channels[chan_id] = data  # 改為實例變量
+            self.enrolled_channels[chan_id] = data
             self.channel_symbol_mapping[chan_id] = symbol
 
     
     def calculate_ticker_statistics(self, ticker_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        計算ticker統計資料
+        Calculate ticker statistics.
         """
         stats = {}
         
@@ -152,14 +152,14 @@ class MarketInfoProcessor:
 
     async def parse_ticker_message(self, data: list) -> None:
         """
-        解析 ticker 消息並更新 ticker 數據
+        Parse a ticker message and update the ticker data.
         
         Args:
-            data (list): 從 WebSocket 接收的 ticker 數據列表
+            data (list): ticker data list received from the WebSocket
                 
         Note:
-            更新 ticker_data 字典並設置 ticker_data_ready 事件
-            同時計算並更新 ticker_stats 統計信息
+            Updates the ticker_data dict and sets the ticker_data_ready event.
+            Also computes and updates the ticker_stats statistics.
         """
         response_keys = [
                 "FRR", "BID", "BID_PERIOD", "BID_SIZE", "ASK", "ASK_PERIOD", "ASK_SIZE",
@@ -183,37 +183,37 @@ class MarketInfoProcessor:
             self.ticker_data = new_ticker_data
             self.ticker_stats = stats
             self.received_channels.add(channel_id)  # tag channel ID as received
-            # 設置數據已準備好的標誌
+            # Signal that data is ready
             self.ticker_data_ready.set()
             
             
     def calculate_candles_statistics(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        計算 candles 統計資料
+        Calculate candles statistics.
         """
         if df.empty:
             return {}
         
-        # 使用 describe() 獲取基礎統計
+        # Use describe() for the basic statistics
         desc = df.describe()
         stats = {
-                # 基礎統計直接從 describe() 取得
+                # Basic statistics taken directly from describe()
                 'count': desc.loc['count', 'CLOSE'],
                 'mean_close': desc.loc['mean', 'CLOSE'],
                 'std_close': desc.loc['std', 'CLOSE'],
                 'min_low': desc.loc['min', 'LOW'],
                 'max_high': desc.loc['max', 'HIGH'],
                 
-                # 四分位數 - 用於風險評估
+                # Quartiles - used for risk assessment
                 'q1_close': desc.loc['25%', 'CLOSE'],
                 'median_close': desc.loc['50%', 'CLOSE'],
                 'q3_close': desc.loc['75%', 'CLOSE'],
                 
-                # 衍生指標
+                # Derived metrics
                 'price_range': desc.loc['max', 'HIGH'] - desc.loc['min', 'LOW'],
-                'volatility': desc.loc['std', 'CLOSE'] / desc.loc['mean', 'CLOSE'],  # 變異係數
+                'volatility': desc.loc['std', 'CLOSE'] / desc.loc['mean', 'CLOSE'],  # coefficient of variation
                 
-                # 完整的 describe 結果供參考
+                # Full describe() output for reference
                 'full_describe': desc.to_dict()
             }
 
@@ -222,29 +222,29 @@ class MarketInfoProcessor:
     
     async def parse_candles_message(self, data: list) -> None:
         """
-        解析 candles 消息並更新 DataFrame
+        Parse a candles message and update the DataFrame.
         """
         try:
             channel_id = data[0]
             symbol = self.channel_symbol_mapping[channel_id]
-            candles_data = data[-1]  # 多個 candles 數據點
+            candles_data = data[-1]  # multiple candle data points
             
-            # 創建 DataFrame
+            # Build the DataFrame
             columns = ['MTS', 'OPEN', 'CLOSE', 'HIGH', 'LOW', 'VOLUME']
             df = pd.DataFrame(candles_data, columns=columns)
             
-            # 轉換時間戳並設為索引
+            # Convert timestamps and set them as the index
             df['timestamp'] = pd.to_datetime(df['MTS'], unit='ms')
             df.set_index('timestamp', inplace=True)
             
-            # 確保數值列為 float 類型
+            # Ensure numeric columns are float
             numeric_columns = ['OPEN', 'CLOSE', 'HIGH', 'LOW', 'VOLUME']
             df[numeric_columns] = df[numeric_columns].astype(float)
             
-            # 按時間排序（最新在前面）
+            # Sort by time (newest first)
             df.sort_index(ascending=False, inplace=True)
             
-            # 計算統計數據
+            # Compute statistics
             stats = self.calculate_candles_statistics(df)
             
             async with self.market_lock:
@@ -265,54 +265,54 @@ class MarketInfoProcessor:
                 self.candles_data_ready.set()
                 
         except Exception as e:
-            logging.error(f"解析 candles 數據時發生錯誤: {e}")
+            logging.error(f"Error parsing candles data: {e}")
             raise
 
 
     async def _calculate_book_checksum(self) -> int:
         """
-        根據 Bitfinex R0 book checksum 規則計算本地訂單簿的校驗和。
-        文檔: https://docs.bitfinex.com/docs/ws-websocket-checksum
+        Compute the checksum of the local order book per the Bitfinex R0 book checksum rules.
+        Docs: https://docs.bitfinex.com/docs/ws-websocket-checksum
 
-        規則:
-        1. 分離 bids (AMOUNT < 0) 和 asks (AMOUNT > 0)。
-        2. Bids 按 RATE 降序排序，Asks 按 RATE 升序排序。
-        3. 選取排序後的頭 25 筆 bids 和 25 筆 asks。
-        4. 交錯合併成一個字串: "bid_id:bid_amount:ask_id:ask_amount:..."
-        5. 計算 CRC32 並返回帶符號的 32 位元整數。
+        Rules:
+        1. Split bids (AMOUNT < 0) and asks (AMOUNT > 0).
+        2. Sort bids by RATE descending and asks by RATE ascending.
+        3. Take the top 25 bids and top 25 asks after sorting.
+        4. Interleave them into one string: "bid_id:bid_amount:ask_id:ask_amount:..."
+        5. Compute the CRC32 and return it as a signed 32-bit integer.
         """
         async with self.book_lock:
             if self.book_df is None or self.book_df.empty:
                 return 0
             
-            # 1. 分離 bids and asks
-            # Bids: 我想借錢 (bid to borrow), AMOUNT < 0, 願意付高利率 -> RATE 降序
-            # Asks: 我想放貸 (ask to lend), AMOUNT > 0, 願意收低利率 -> RATE 升序
+            # 1. Split bids and asks
+            # Bids: bid to borrow, AMOUNT < 0, willing to pay a higher rate -> RATE descending
+            # Asks: ask to lend, AMOUNT > 0, willing to accept a lower rate -> RATE ascending
             bids = self.book_df[self.book_df['AMOUNT'] < 0]
             asks = self.book_df[self.book_df['AMOUNT'] > 0]
             
-            # 2. 排序 (對於利率相同的訂單，按 OFFER_ID 升序進行次級排序)
+            # 2. Sort (ties on RATE are broken by OFFER_ID ascending)
             sorted_bids = bids.sort_values(by=['RATE', 'OFFER_ID'], ascending=[False, True])
             sorted_asks = asks.sort_values(by=['RATE', 'OFFER_ID'], ascending=[True, True])
             
-            # 3. 選取頭 25 筆
+            # 3. Take the top 25
             top_bids = sorted_bids.head(25)
             top_asks = sorted_asks.head(25)
             
-            # 4. 建立校驗和字串
-            # 根據文檔 [bids[0].id, bids[0].amount, asks[0].id, asks[0].amount, ...] 的格式交錯排列
+            # 4. Build the checksum string
+            # Interleaved as in the docs: [bids[0].id, bids[0].amount, asks[0].id, asks[0].amount, ...]
             chk_data = []
             
             bids_list = list(top_bids.iterrows())
             asks_list = list(top_asks.iterrows())
 
             for i in range(25):
-                # 如果有 bid 在此位置，則添加
+                # Append the bid at this position, if any
                 if i < len(bids_list):
                     bid_id, bid_row = bids_list[i]
                     chk_data.extend([str(bid_id), _format_float(bid_row['AMOUNT'].item()).rstrip('0').rstrip('.')])
                 
-                # 如果有 ask 在此位置，則添加
+                # Append the ask at this position, if any
                 if i < len(asks_list):
                     ask_id, ask_row = asks_list[i]
                     chk_data.extend([str(ask_id), _format_float(ask_row['AMOUNT'].item()).rstrip('0').rstrip('.')])
@@ -322,7 +322,7 @@ class MarketInfoProcessor:
 
             chk_str = ":".join(chk_data)
             
-            # 5. 計算 CRC32 並轉換為有符號的 32 位元整數
+            # 5. Compute the CRC32 and convert it to a signed 32-bit integer
             crc = zlib.crc32(chk_str.encode('utf8'))
             signed_crc = ctypes.c_int32(crc).value
             
@@ -331,23 +331,23 @@ class MarketInfoProcessor:
 
     async def parse_book_message(self, data: list) -> None:
         """
-        解析 book 的快照(snapshot)或更新(update)消息，並更新訂單簿 DataFrame。
+        Parse a book snapshot or update message and update the order book DataFrame.
         
         Args:
-            data (list): 從 WebSocket 接收的 book 數據列表
+            data (list): book data list received from the WebSocket
                         
         Note:
-            1. 欄位為 OFFER_ID、PERIOD、RATE、AMOUNT
-            2. AMOUNT > 0 時為出借(Ask)，AMOUNT < 0 時為借入(Bid)
+            1. Fields are OFFER_ID, PERIOD, RATE, AMOUNT
+            2. AMOUNT > 0 is the lending side (ask); AMOUNT < 0 is the borrowing side (bid)
             3. RATE, Funding rate for the offer; if 0 you have to remove the offer from your book
         """
         try:
             book_payload = data[-1]
-            # 判斷是快照 (list of lists，可能為空) 還是單筆更新 (list)
+            # Determine whether this is a snapshot (list of lists, possibly empty) or a single update (list)
             is_snapshot = isinstance(book_payload, list) and \
                           (not book_payload or isinstance(book_payload[0], list))
 
-            # 統一在最外層獲取鎖，避免 deadlock
+            # Acquire the lock once at the outermost level to avoid deadlock
             async with self.book_lock:
                 if is_snapshot:
                     self._handle_book_snapshot(book_payload)
@@ -358,19 +358,19 @@ class MarketInfoProcessor:
                 self.book_data_ready.set()
 
         except Exception as e:
-            logging.error(f"解析 book 數據時發生錯誤: {e} | data: {data}")
+            logging.error(f"Error parsing book data: {e} | data: {data}")
             raise
 
 
     def _handle_book_snapshot(self, book_payload: list) -> None:
-        """處理訂單簿快照 - 假設已獲取鎖"""
+        """Handle an order book snapshot - assumes the lock is held."""
         df = pd.DataFrame(book_payload, columns=self.BOOK_COLUMNS)
         df.set_index('OFFER_ID', inplace=True)
         self.book_df = df
 
 
     def _handle_book_update(self, book_payload: list) -> None:
-        """處理訂單簿單筆更新 - 假設已獲取鎖"""
+        """Handle a single order book update - assumes the lock is held."""
         if self.book_df is None:
             logging.warning("Book update received before snapshot.")
             return
@@ -378,7 +378,7 @@ class MarketInfoProcessor:
         update_data = dict(zip(self.BOOK_COLUMNS, book_payload))
         offer_id = update_data['OFFER_ID']
         
-        # RATE = 0 表示刪除
+        # RATE = 0 means delete
         if update_data['RATE'] == 0:
             self._remove_book_entry(offer_id)
         else:
@@ -386,13 +386,13 @@ class MarketInfoProcessor:
 
 
     def _remove_book_entry(self, offer_id: int) -> None:
-        """移除訂單簿條目 - 假設已獲取鎖"""
+        """Remove an order book entry - assumes the lock is held."""
         if offer_id in self.book_df.index:
             self.book_df.drop(offer_id, inplace=True)
 
 
     def _update_book_entry(self, offer_id: int, update_data: dict) -> None:
-        """更新或新增訂單簿條目 - 假設已獲取鎖"""
+        """Update or add an order book entry - assumes the lock is held."""
         self.book_df.loc[offer_id] = [
             update_data['PERIOD'],
             update_data['RATE'],
@@ -402,7 +402,7 @@ class MarketInfoProcessor:
     
     def get_best_rate(self, df: pd.DataFrame) -> float:
         """
-        快速掛單模式下，回傳 book 裡 PERIOD = 2 的最低 ask 利率（最優的出借報價）
+        Return the lowest ask rate with PERIOD = 2 in the book (the best lending quote).
         """
         if df.empty:
             return 0.0
@@ -418,23 +418,23 @@ class MarketInfoProcessor:
     
     
     async def get_book_info(self, timeout: int = 30) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """獲取 book 數據和統計"""
+        """Get book data and statistics."""
         try:
             await asyncio.wait_for(self.book_data_ready.wait(), timeout=timeout)
             self.book_data_ready.clear()
         except asyncio.TimeoutError:
-            logging.warning(f"返回當前可用數據，等待 book 數據超時 ({timeout}秒)")
+            logging.warning(f"Returning currently available data; timed out waiting for book data ({timeout}s)")
         
-        async with self.book_lock:  # 只獲取一次鎖
+        async with self.book_lock:  # Acquire the lock only once
             book_rate = self.get_best_rate(self.book_df) if self.book_df is not None else 0
             return self.book_df.copy() if self.book_df is not None else pd.DataFrame(), book_rate
     
     
     async def handle_market_messages(self, market_queue) -> None:
-        """處理從 WebSocket 接收的消息
+        """Handle messages received from the WebSocket.
         
         Returns:
-            bool: 是否繼續處理消息
+            bool: whether to keep processing messages
         """
         while True:
             data = await market_queue.get()
@@ -443,10 +443,10 @@ class MarketInfoProcessor:
                 if isinstance(data, dict) and data.get("event") == "subscribed":
                     await self.enroll_channel_id(data)
 
-                # 交易所公告：20051 伺服器重啟、20060 開始維護、20061 維護結束
+                # Exchange notices: 20051 server restart, 20060 maintenance started, 20061 maintenance ended
                 elif isinstance(data, dict) and data.get("event") == "info" and data.get("code"):
-                    logging.warning(f"交易所公告 {data.get('code')}: {data.get('msg')}")
-                    # 20061 維護結束：文件建議重新訂閱所有頻道，透過重連公開連線完成
+                    logging.warning(f"Exchange notice {data.get('code')}: {data.get('msg')}")
+                    # 20061 maintenance ended: the docs recommend resubscribing to all channels, done by reconnecting the public connection
                     if data.get("code") == 20061 and self.reconnect_queue:
                         await self.reconnect_queue.put("pub")
 
@@ -465,22 +465,22 @@ class MarketInfoProcessor:
                                 pass
                             
                             elif channel_type == "book":
-                                # data[1] 為 "cs" 表示是校驗和(checksum)訊息
+                                # data[1] == "cs" marks a checksum message
                                 if data[1] == "cs":
                                     server_cs = data[2]
                                     client_cs = await self._calculate_book_checksum()
                                     
                                     if client_cs != server_cs:
-                                        logging.error(f"Checksum 不符，資料可能已出錯，需要重新同步。")
+                                        logging.error(f"Checksum mismatch; data may be corrupted, resync required.")
                                         if self.reconnect_queue:
                                             await self.reconnect_queue.put("pub")
                                             await asyncio.sleep(1.0)
                                     else:
-                                        # logging.info(f"Checksum 相符，資料同步正確。")
+                                        # logging.info(f"Checksum matches; data is in sync.")
                                         pass
                                 else:
-                                    # 否則為訂單簿快照或更新訊息
+                                    # Otherwise it is an order book snapshot or update message
                                     await self.parse_book_message(data)
             finally:
-                # 標記隊列任務完成
+                # Mark the queue task as done
                 market_queue.task_done()

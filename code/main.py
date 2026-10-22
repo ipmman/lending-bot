@@ -191,14 +191,14 @@ async def place_order(order_manager,
         return False
 
 
-async def handle_cancel_order_timeout(order_manager, active_id, counter_cancel):
+async def handle_cancel_order_timeout(order_manager, active_id, counter_cancel, timeout_seconds):
     """
     處理掛單逾時邏輯，回傳 (new_counter_cancel, success or not)
     """
     instance_id = order_manager.websocket_client.instance_id
     try:
         await order_manager.cancel_funding_offer(active_id)
-        logger.info(f"掛單未成交時間超過{config.FRR_ORDER_TIMEOUT}分鐘，已取消掛單")
+        logger.info(f"掛單未成交時間超過{timeout_seconds:.0f}秒，已取消掛單")
         return 0, True
     
     except Exception as e:
@@ -338,7 +338,7 @@ async def lending_engine(order_manager,
                     # 處理掛單超時
                     if timeout_condition:
                         counter_cancel, cancel_success = await handle_cancel_order_timeout(
-                            order_manager, ask_id, counter_cancel
+                            order_manager, ask_id, counter_cancel, timeout_seconds
                         )
 
                         if not cancel_success:

@@ -402,7 +402,7 @@ class MarketInfoProcessor:
     
     def get_best_rate(self, df: pd.DataFrame) -> float:
         """
-        快速掛單模式下，回傳 book 裡的最高利率(PERIOD = 2)
+        快速掛單模式下，回傳 book 裡 PERIOD = 2 的最低 ask 利率（最優的出借報價）
         """
         if df.empty:
             return 0.0

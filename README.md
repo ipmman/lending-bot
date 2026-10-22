@@ -16,7 +16,7 @@ This bot adopts a **Three-Stage Cycle Strategy**, aiming to balance "Profit Maxi
 ### 1. FRR Mode (Conservative & Robust)
 - **Default Startup Mode**.
 - **Rate Calculation**: Place orders at **FRR (Flash Return Rate) * 0.98**.
-  - If the current market Order Book rate is excellent (Book Rate * 0.98 > FRR * 0.98), it will automatically increase the rate to capture higher yield.
+  - If the current market Order Book rate is excellent (Book Rate * 0.99 > FRR * 0.98), it will automatically increase the rate to capture higher yield.
 - **Timeout Mechanism**: Wait for **1 minute** after placing the order.
 - **State Switch**: If the order is **not filled within 1 minute** (cancelled by the bot), it counts as a failure.
   - After **3 consecutive failures**, switch to **Active Mode**.
@@ -24,14 +24,14 @@ This bot adopts a **Three-Stage Cycle Strategy**, aiming to balance "Profit Maxi
 ### 2. Active Mode (Aggressive Sniping)
 - **Trigger Condition**: Continuous failures in FRR Mode, indicating fast market changes or FRR distortion, requiring a more aggressive strategy.
 - **Rate Calculation**: Read the best Order Book rate directly and place order at **Book Rate * 0.99** (1% discount) to ensure queue priority.
-- **Timeout Mechanism**: Wait for only **10 seconds** (pursuing immediate execution).
+- **Timeout Mechanism**: Wait for only **30 seconds** (pursuing immediate execution).
 - **State Switch**:
   - If **Filled**: Reset to **FRR Mode**.
   - If **Not Filled**: After **6 consecutive failures**, trigger **Circuit Breaker**.
 
 ### 3. Circuit Breaker Mechanism
 - **Trigger Condition**: Aggressive sniping fails to execute, possibly due to extreme market instability or anomalies.
-- **Action**: Pause all lending actions, **sleep for 60 seconds**.
+- **Action**: Pause all lending actions, **sleep for 120 seconds**.
 - **Recovery**: After sleep ends, reset all counters and restart from **FRR Mode**.
 
 ---
@@ -151,9 +151,9 @@ docker run --rm -it \
 | `FRR_ORDER_TIMEOUT` | `1.0` minute | FRR Mode order timeout. Timeout cancels the order and counts as one failure. |
 | `FRR_FAILURE_THRESHOLD` | `3` times | Switch to Active Mode after this many consecutive failures in FRR Mode. |
 | `ACTIVE_RATE_DISCOUNT` | `0.99` | Active Mode rate multiplier. 0.99 means 1% discount to snatch execution. |
-| `ACTIVE_ORDER_TIMEOUT` | `10` seconds | Active Mode order timeout. |
+| `ACTIVE_ORDER_TIMEOUT` | `30` seconds | Active Mode order timeout. |
 | `ACTIVE_MAX_ATTEMPTS` | `6` times | Trigger Circuit Breaker after this many consecutive failures in Active Mode. |
-| `CIRCUIT_BREAKER_DURATION` | `60` seconds | Circuit Breaker pause duration. After cooling down, the system automatically recovers and resets to FRR Mode. |
+| `CIRCUIT_BREAKER_DURATION` | `120` seconds | Circuit Breaker pause duration. After cooling down, the system automatically recovers and resets to FRR Mode. |
 
 #### Market Data & Loop
 

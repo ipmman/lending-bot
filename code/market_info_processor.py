@@ -45,6 +45,9 @@ class MarketInfoProcessor:
         self.candles_data_ready = asyncio.Event()
         self.book_data_ready = asyncio.Event()
         self.reconnect_queue = None
+        # Time of the last message on the public connection, of any kind; the ticker
+        # alone is pushed only when its values change
+        self.last_message_time: Optional[datetime] = None
         
         self.enrolled_channels: DefaultDict[int, Dict[str, Any]] = defaultdict(dict)  # subscribed channels
         self.received_channels = set()  # channel IDs that have received data
@@ -69,6 +72,7 @@ class MarketInfoProcessor:
         self.ticker_data_ready.clear()
         self.candles_data_ready.clear()
         self.book_data_ready.clear()
+        self.last_message_time = None
     
     
     def set_reconnect_queue(self, reconnect_queue):
@@ -433,6 +437,7 @@ class MarketInfoProcessor:
         """Handle messages received from the WebSocket."""
         while True:
             data = await market_queue.get()
+            self.last_message_time = datetime.now()
             
             try:
                 if isinstance(data, dict) and data.get("event") == "subscribed":

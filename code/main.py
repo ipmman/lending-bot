@@ -243,6 +243,11 @@ async def lending_engine(order_manager,
     # Partially filled offers already counted as a success, so strategy state isn't reset every iteration
     partially_filled_ids: set[int] = set()
     last_heartbeat = datetime.now()
+    # Values shown by the heartbeat, carried over from the latest iteration
+    ask_ids: list = []
+    funding_balance = 0.0
+    ticker_stats = None
+    book_rate = None
     
     # Strategy parameters - read from config
     FRR_FAILURE_THRESHOLD = config.FRR_FAILURE_THRESHOLD
@@ -262,7 +267,28 @@ async def lending_engine(order_manager,
         try:
             logger.debug("-----------------------------------------------------------------")
             logger.debug(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            
+
+            # Heartbeat: log a one-line INFO summary every HEARTBEAT_INTERVAL seconds instead of
+            # flooding DEBUG. It runs first so it keeps appearing while the loop skips placing.
+            if config.HEARTBEAT_INTERVAL > 0:
+                now = datetime.now()
+                if (now - last_heartbeat).total_seconds() >= config.HEARTBEAT_INTERVAL:
+                    parts = [
+                        f"mode={'circuit_breaker' if circuit_breaker_triggered else current_mode}",
+                        f"balance={funding_balance:.2f}",
+                        f"orders={len(ask_ids) if ask_ids else 0}",
+                    ]
+                    if ticker_stats:
+                        parts.append(f"frr={ticker_stats['frr_yearly']:.4f}%")
+                        parts.append(f"low={ticker_stats['low_rate_yearly']:.4f}%")
+                    if book_rate is not None:
+                        parts.append(f"book={book_rate*365*100:.4f}%")
+                    last_message = market_info_processor.last_message_time
+                    if last_message:
+                        parts.append(f"age={(now - last_message).total_seconds():.0f}s")
+                    logger.info("heartbeat | " + " | ".join(parts))
+                    last_heartbeat = now
+
             # Check circuit breaker state
             if circuit_breaker_triggered:
                 if circuit_breaker_start_time:
@@ -407,9 +433,12 @@ async def lending_engine(order_manager,
                 book_data, book_rate = await market_info_processor.get_book_info(timeout=5)
                 # _, candles_stats = await market_info_processor.get_candles_info(timeout=30)
 
-                # Check data freshness
+                # Check data freshness. The ticker is pushed only when its values change, so
+                # judge freshness by the last message on the public connection (book updates
+                # and heartbeats included) rather than by the last ticker
                 if last_update:
-                    age = (datetime.now() - last_update).total_seconds()
+                    last_message = market_info_processor.last_message_time or last_update
+                    age = (datetime.now() - last_message).total_seconds()
                     
                     if age > config.MARKET_DATA_CRITICAL_STALE_MINUTES * 60:
                         instance_id = pub_client.instance_id
@@ -480,25 +509,6 @@ async def lending_engine(order_manager,
             # success, reset counters
             counter_cancel = 0
             error_backoff.success()  # Reset the backoff counter
-
-            # Heartbeat: log a one-line INFO summary every HEARTBEAT_INTERVAL seconds instead of flooding DEBUG
-            if config.HEARTBEAT_INTERVAL > 0:
-                now = datetime.now()
-                if (now - last_heartbeat).total_seconds() >= config.HEARTBEAT_INTERVAL:
-                    parts = [
-                        f"mode={current_mode}",
-                        f"balance={funding_balance:.2f}",
-                        f"orders={len(ask_ids) if ask_ids else 0}",
-                    ]
-                    if ticker_stats:
-                        parts.append(f"frr={ticker_stats['frr_yearly']:.4f}%")
-                        parts.append(f"low={ticker_stats['low_rate_yearly']:.4f}%")
-                    if book_rate is not None:
-                        parts.append(f"book={book_rate*365*100:.4f}%")
-                    if last_update:
-                        parts.append(f"age={(now - last_update).total_seconds():.0f}s")
-                    logger.info("heartbeat | " + " | ".join(parts))
-                    last_heartbeat = now
 
             # Sleep briefly before checking again
             await asyncio.sleep(config.MAIN_LOOP_DELAY)

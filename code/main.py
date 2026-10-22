@@ -233,6 +233,8 @@ async def lending_engine(order_manager,
     circuit_breaker_start_time = None
     # 記錄每個訂單掛單時的模式，避免模式切換後誤用錯誤的 timeout
     order_modes: dict[int, str] = {}
+    # 已算過一次成功的部分成交掛單，避免每輪重複重置策略狀態
+    partially_filled_ids: set[int] = set()
     last_heartbeat = datetime.now()
     
     # 策略參數 - 從配置文件讀取
@@ -284,19 +286,26 @@ async def lending_engine(order_manager,
                 active_set = set(ask_ids)
                 for stale_id in [oid for oid in order_modes if oid not in active_set]:
                     order_modes.pop(stale_id, None)
+                partially_filled_ids &= active_set
 
                 for ask_id in ask_ids:
                     # 檢查掛單是否已成交
                     is_executed, execution_status, offer_info = await order_manager.check_order_executed(ask_id)
 
-                    if is_executed:
-                        # 掛單成交！標記成功，但繼續檢查其他掛單
+                    if is_executed and 'EXECUTED' in execution_status:
+                        # 掛單完全成交！標記成功，但繼續檢查其他掛單
                         logger.info(f"掛單成交 | 狀態: {execution_status} | ID: {ask_id}")
                         order_modes.pop(ask_id, None)
                         any_order_executed = True
                         continue  # 檢查下一個 ask_id
 
-                    # ----- 如果未成交，才繼續處理超時邏輯 -----
+                    if is_executed and ask_id not in partially_filled_ids:
+                        # 部分成交：每筆掛單只算一次成功；剩餘部分照常走下面的逾時取消，下一輪重掛
+                        logger.info(f"掛單部分成交 | 狀態: {execution_status} | ID: {ask_id}")
+                        partially_filled_ids.add(ask_id)
+                        any_order_executed = True
+
+                    # ----- 如果未完全成交，才繼續處理超時邏輯 -----
                     last_update_time = await order_manager.get_order_update_time(ask_id)
                     if last_update_time:
                         time_diff = get_elapsed_time(last_update_time)

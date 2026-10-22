@@ -27,7 +27,7 @@ class ExponentialBackoff:
         self.retry_count = 0
     
     async def wait(self, context_name=""):
-        """Wait, then return whether the counter should be reset.
+        """Wait, then return whether the counter was reset.
         
         Args:
             context_name (str): Context label used in log messages
@@ -37,7 +37,7 @@ class ExponentialBackoff:
         """
         self.retry_count += 1
         
-        # Wait time: base delay * 2^retry count
+        # Wait time: base delay * 2^(retry count - 1)
         wait_time = min(self.max_delay, self.base_delay * (2 ** (self.retry_count - 1)))
         
         # Add random jitter (so multiple instances don't retry at the same moment)

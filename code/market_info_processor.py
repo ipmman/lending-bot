@@ -76,7 +76,7 @@ class MarketInfoProcessor:
         self.reconnect_queue = reconnect_queue
     
     
-    async def get_ticker_info(self, timeout: int = 600) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    async def get_ticker_info(self, timeout: float = 600) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Safely get the latest ticker data and statistics.
         
@@ -103,8 +103,8 @@ class MarketInfoProcessor:
              return self.ticker_data.copy(), self.ticker_stats.copy()
 
 
-    async def get_candles_info(self, timeout: int = 30) -> Dict[str, Any]:
-        """Get candles statistics."""
+    async def get_candles_info(self, timeout: int = 30) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Get the candles DataFrame and statistics."""
         try:
             await asyncio.wait_for(self.candles_data_ready.wait(), timeout=timeout)
             self.candles_data_ready.clear()
@@ -417,8 +417,8 @@ class MarketInfoProcessor:
         return round(rate, 8)
     
     
-    async def get_book_info(self, timeout: int = 30) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Get book data and statistics."""
+    async def get_book_info(self, timeout: int = 30) -> Tuple[pd.DataFrame, float]:
+        """Get the order book DataFrame and the best ask rate."""
         try:
             await asyncio.wait_for(self.book_data_ready.wait(), timeout=timeout)
             self.book_data_ready.clear()
@@ -431,11 +431,7 @@ class MarketInfoProcessor:
     
     
     async def handle_market_messages(self, market_queue) -> None:
-        """Handle messages received from the WebSocket.
-        
-        Returns:
-            bool: whether to keep processing messages
-        """
+        """Handle messages received from the WebSocket."""
         while True:
             data = await market_queue.get()
             

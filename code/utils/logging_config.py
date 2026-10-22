@@ -16,7 +16,7 @@ def setup_logging(log_level=logging.INFO, log_file="../logs/main.log"):
     # Clear existing handlers to avoid duplicates
     logger.handlers.clear()
     
-    # RotatingFileHandler: 20MB per file, keep last 5 files
+    # RotatingFileHandler: 20MB per file, keep 5 backups
     file_handler = RotatingFileHandler(
         log_file, 
         mode='a', 

@@ -37,7 +37,7 @@ class Authenticator:
     async def authenticate(self, websocket_client: WebSocketClient, 
                            auth_filter: Optional[List[str]] = None,
                            verbose: bool = False,
-                           dispatcher: MessageDispatcher = None) -> bool:
+                           dispatcher: Optional[MessageDispatcher] = None) -> bool:
         
         auth_message = self._build_authentication_message(auth_filter=auth_filter)
         await websocket_client.send(auth_message)

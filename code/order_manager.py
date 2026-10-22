@@ -78,9 +78,6 @@ class OrderManager:
             amount (float): Offer amount
             rate (float): Daily rate
             period (int): Offer period
-            
-        Returns:
-            Dict[int, Dict[str, Any]]: Latest details of all offers
         """
         if rate < config.MINIMUM_RATE / 365 / 100:
             raise ValueError(f"Rate {rate*100*365:.2f}% is below the minimum rate of {config.MINIMUM_RATE:.2f}%")
@@ -111,9 +108,6 @@ class OrderManager:
         
         Args:
             offer_id (int): Offer ID
-
-        Returns:
-            Dict[int, Dict[str, Any]]: Details of all offers
         """
         try:
             self.offers_updated.clear()
@@ -137,7 +131,7 @@ class OrderManager:
             raise
 
 
-    async def get_funding_offer(self, wait_for_update: bool = False, timeout: Optional[float] = None) -> Union[Dict[int, Dict[str, Any]], pd.DataFrame]:
+    async def get_funding_offer(self, wait_for_update: bool = False, timeout: Optional[float] = None) -> pd.DataFrame:
         """Get funding offers."""
         if wait_for_update:
             try:
@@ -287,7 +281,7 @@ class OrderManager:
                         logging.debug("Received funding offer snapshot")
                 
                 
-                elif curr_event in {"fou", "fon"}:  # funding offer update
+                elif curr_event in {"fou", "fon"}:  # new or updated funding offer
                     offer_series = self._parse_single_offer(infos)
                     await self.update_offer(offer_series)
                     status = offer_series['OFFER_STATUS']

@@ -19,7 +19,7 @@ class WalletManager:
         self.wallets_updated = asyncio.Event()  # Event signaling wallet updates
         self.wallets_lock = asyncio.Lock()  # Lock protecting data access
         self.update_timer = None  # Timer
-        self.update_delay = 1.5  # wallet_update timeout (seconds)
+        self.update_delay = 1.5  # debounce (seconds) after the last wallet update before signaling
 
 
     async def parse_wallet_snapshot(self, wallets):
@@ -69,7 +69,7 @@ class WalletManager:
         # logging.info("All wallet info updated!")
     
     
-    async def get_wallet_balances(self, currency: str, wait_for_update: bool = False, timeout: float = None) -> Dict[str, float]:
+    async def get_wallet_balances(self, currency: str, wait_for_update: bool = False, timeout: float | None = None) -> Dict[str, float | None]:
         """Get the available balance of every wallet type for a currency, with an optional wait timeout.
         
         Args:

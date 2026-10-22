@@ -252,7 +252,7 @@ class WebSocketClient:
             timestamps.append(now)
             
             
-    async def connect(self, authenticator=None, auth_filter=None, verbose=False) -> None:
+    async def connect(self, authenticator=None, auth_filter=None, verbose=False) -> bool:
         """Open the WebSocket connection.
         
         Args:
@@ -532,12 +532,12 @@ class WebSocketClient:
             return False
 
 
-    async def send(self, message: Dict[str, str], retries=3) -> None:
+    async def send(self, message: Dict[str, Any] | list, retries=3) -> None:
         """
-        Serialize the message (dict) to a JSON string and send it to the WebSocket server.
+        Serialize the message (dict or list) to a JSON string and send it to the WebSocket server.
         
         Args:
-            message (Dict[str, str])
+            message (Dict[str, Any] | list)
         """
         for attempt in range(retries):
             try:
@@ -549,21 +549,20 @@ class WebSocketClient:
                 await asyncio.sleep(min(30, 2 ** attempt))
     
     
-    async def receive(self, message) -> Dict[str, Any]:
+    async def receive(self, message) -> Dict[str, Any] | list:
         """
-        Parse the server's JSON string into a dict.
+        Parse the server's JSON string into a dict or list.
         
         Args:
             message (string)
 
         Returns:
-            Dict[str, Any]
+            Dict[str, Any] | list
         """
         return json.loads(message)
 
 
-    async def subscribe(self, channels: list[Dict[str, Any]], processor: MarketInfoProcessor = None) -> None:
-        # Recommended: use the instance variable
+    async def subscribe(self, channels: list[Dict[str, Any]], processor: MarketInfoProcessor | None = None) -> None:
         if processor is None:
             raise Exception("processor is required for subscribe.")
         

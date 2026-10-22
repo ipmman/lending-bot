@@ -15,14 +15,14 @@ def calculate_rate(
     """
     Calculate desired daily lending rate based on strategy mode and market data.
 
-    Pure function — no config access, no side effects.
+    Pure function: no config access and no state changes (smart mode logs at debug level).
 
     Args:
         mode: Strategy mode ("smart", "frr", "active")
         min_rate_yearly: Minimum acceptable yearly rate percentage (e.g. 7.0588)
         frr_rate_discount: Discount factor for FRR mode (e.g. 0.98)
         active_rate_discount: Discount factor for active/book_rate adjustments (e.g. 0.99)
-        ticker_stats: Ticker data dict with 'frr_yearly' key
+        ticker_stats: Ticker statistics dict with 'frr_yearly' key
         candles_stats: Candles statistics dict (for smart mode)
         book_rate: Current best book rate (daily fraction)
 
@@ -47,7 +47,7 @@ def calculate_rate(
     else:
         desired_rate = min_rate
 
-    # Outside active mode, if the book rate is higher than this mode's target, use the book-rate logic instead
+    # Outside Active mode, if the book rate after the Active discount beats this mode's target, use it instead
     # (book_rate is already a market price, so the active discount is enough; no need for FRR's deeper discount)
     if mode != "active":
         if book_rate and (book_rate * active_rate_discount) > desired_rate:

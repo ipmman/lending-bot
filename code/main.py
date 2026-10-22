@@ -123,7 +123,7 @@ async def market_info_task(market_info_processor, market_queue):
             await asyncio.sleep(5.0)
 
 
-# Background task for the order book
+# Background task for funding offers
 async def order_management_task(order_manager, fo_queue):
     """Background task - handle offer-related messages"""
     logger.info("Starting offer management background task...")
@@ -234,7 +234,7 @@ async def lending_engine(order_manager,
     counter_cancel = 0  # Error count for offer cancellation
     
     # Offer strategy state
-    current_mode = "frr"  # One of: frr, active, paused
+    current_mode = "frr"  # One of: frr, active
     frr_failure_count = 0  # FRR offer failure count
     active_attempt_count = 0  # Active mode attempt count
     circuit_breaker_triggered = False
@@ -282,7 +282,7 @@ async def lending_engine(order_manager,
                         await asyncio.sleep(config.MAIN_LOOP_DELAY)
                         continue
             
-            # Make sure the market data processor state is ready
+            # Get the IDs of the currently active offers (asks)
             _, ask_ids = await order_manager.get_active_order_ids(symbol)
             
             # Flags tracking the state of this iteration
@@ -627,7 +627,8 @@ async def main():
         reconnection_state_monitor()
     )
     
-    # The server takes time to respond, so this goes here
+    # Authenticate after dispatch_task starts: the auth reply reaches
+    # authenticate() through the dispatcher's auth_queue
     await authenticator.authenticate(auth_ws_client, auth_filter=auth_filter, dispatcher=dispatcher)
    
     tasks = [
@@ -649,8 +650,8 @@ async def main():
             
     finally:
         # Clean up resources
-        # Cancel tasks in reverse dependency order
-        # Task dependencies: lending_engine -> order/wallet -> dispatch -> market/reconnect
+        # Cancel the business logic first, then the reconnect tasks, then the
+        # queue consumers, and finally the dispatcher and the market data task
         cleanup_order = [
             lending_engine_task,           # Cancel core business logic first
             reconnect_state_monitor_task, # Cancel the reconnect state monitor

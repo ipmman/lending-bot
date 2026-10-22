@@ -47,6 +47,12 @@ class MessageDispatcher:
 
                             elif event_type in {"ws", "wu"}:
                                 await self.wallet_queue.put(data)  # wallet 相關消息
+
+                            # 通知格式 [MTS, TYPE, MESSAGE_ID, null, NOTIFY_INFO, CODE, STATUS, TEXT]
+                            elif event_type == "n" and len(payload) > 7 and payload[6] in {"ERROR", "FAILURE"}:
+                                info = payload[4]
+                                offer_id = info[0] if isinstance(info, list) and info else None
+                                logging.warning(f"交易所拒絕 {payload[1]} (ID: {offer_id}): {payload[7] or '交易所未附原因'}")
                 except Exception as e:
                     logging.error(f"Error in dispatch_auth_messages: {e}")
                     await asyncio.sleep(1)

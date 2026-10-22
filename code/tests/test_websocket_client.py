@@ -42,6 +42,14 @@ async def test_authenticate_raises_on_failed():
         await _authenticate({"event": "auth", "status": "FAILED", "code": 10100})
 
 
+async def test_rejected_request_reason_is_logged(caplog):
+    rejected = [0, "n", [0, "fon-req", None, None, [], None, "ERROR", "Invalid offer: not enough balance"]]
+    dispatch_task = asyncio.create_task(MessageDispatcher(_FakeClient([rejected]), _FakeClient([])).dispatch_messages())
+    await asyncio.sleep(0.01)
+    dispatch_task.cancel()
+    assert "Invalid offer: not enough balance" in caplog.text
+
+
 async def test_stuck_watchdog_cancels_only_the_reconnection(monkeypatch):
     """看門狗取消卡住的重連時，呼叫者（reconnection_monitor / 接收器）要拿到 False 繼續重試，不能被一起取消"""
     async def hang(*args, **kwargs):

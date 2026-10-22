@@ -52,7 +52,15 @@ async def reconnection_monitor(reconnect_queue, pub_client, auth_client, market_
     while True:
         # 改用隊列機制：從隊列獲取重連請求
         client_type = await reconnect_queue.get()
-        
+        # 佇列裡同類型的重複請求一次處理掉，避免恢復連線後連續重連；其他類型放回佇列
+        other_requests = []
+        while not reconnect_queue.empty():
+            pending = reconnect_queue.get_nowait()
+            if pending != client_type:
+                other_requests.append(pending)
+        for pending in other_requests:
+            reconnect_queue.put_nowait(pending)
+
         client = pub_client if client_type == "pub" else auth_client
         instance_id = client.instance_id
         backoff = reconnect_backoffs[client_type]

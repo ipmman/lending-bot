@@ -160,7 +160,7 @@ docker run --rm -it \
 | Variable Name | Default Value | Description |
 |---------------|---------------|-------------|
 | `MAIN_LOOP_DELAY` | `2.0` seconds | Main loop interval. Smaller is more aggressive, larger is more conservative. |
-| `MARKET_DATA_FETCH_TIMEOUT` | `1.0` minute | Maximum wait time for market data update. |
+| `MARKET_DATA_FETCH_TIMEOUT` | `0.1` minute (6 seconds) | Maximum wait time for market data update. |
 | `MARKET_INFO_MAX_AGE_MINUTES` | `2.0` minutes | Maximum allowed market data staleness. If data is too old (exceeds this time), it is considered invalid and the current round is skipped. |
 | `MARKET_DATA_CRITICAL_STALE_MINUTES` | `20.0` minutes | Critical staleness threshold. Exceeding this triggers reconnection. |
 

@@ -375,7 +375,7 @@ async def lending_engine(order_manager,
 
                     
             # 獲取最新餘額
-            balances_available = await wallet_manager.get_wallet_balances(symbol, wait_for_update=True, timeout=15.0)
+            balances_available = await wallet_manager.get_wallet_balances(symbol, wait_for_update=True, timeout=2.0)
             funding_balance = balances_available.get("funding", 0.0)
             
             if funding_balance is None:

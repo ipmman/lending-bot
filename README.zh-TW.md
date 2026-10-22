@@ -160,7 +160,7 @@ docker run --rm -it \
 | 變數名稱 | 預設值 | 說明 |
 |---------|--------|------|
 | `MAIN_LOOP_DELAY` | `2.0` 秒 | 主迴圈間隔。調小更積極，調大更保守 |
-| `MARKET_DATA_FETCH_TIMEOUT` | `1.0` 分鐘 | 等待市場資料更新的最長時間 |
+| `MARKET_DATA_FETCH_TIMEOUT` | `0.1` 分鐘（6 秒） | 等待市場資料更新的最長時間 |
 | `MARKET_INFO_MAX_AGE_MINUTES` | `2.0` 分鐘 | 市場資料允許的最大滯後時間。若資料過舊（超過此時間），將視為無效並跳過本輪掛單 |
 | `MARKET_DATA_CRITICAL_STALE_MINUTES` | `20.0` 分鐘 | 市場資料嚴重過期門檻。超過會觸發重連 |
 

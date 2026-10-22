@@ -83,3 +83,6 @@ code/tests/__pycache__/
 
 # other
 Dockerfile.dev
+
+# understand-anything knowledge graph (local)
+.ua/

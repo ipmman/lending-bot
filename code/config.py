@@ -29,8 +29,8 @@ AUTH_FILTER = None  # 全部資訊，不過濾；可設 ["funding", "trading"]
 
 
 # ============== 連線設定 ==============
-PING_INTERVAL: int = int(os.getenv("PING_INTERVAL", "20"))
-PING_TIMEOUT: int = int(os.getenv("PING_TIMEOUT", "30"))
+PING_INTERVAL: float = float(os.getenv("PING_INTERVAL", "20"))
+PING_TIMEOUT: float = float(os.getenv("PING_TIMEOUT", "30"))
 MAX_CONNECTIONS_PER_MINUTE: int = 20  # Bitfinex API 限制，勿改
 MAX_CONNECTIONS_PER_15_SECONDS: int = 5  # Bitfinex API 限制，勿改
 

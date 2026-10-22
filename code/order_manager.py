@@ -260,9 +260,7 @@ class OrderManager:
     async def _handle_snapshot(self, infos) -> None:
         """處理 snapshot """
         async with self.offers_lock:
-            if not infos:
-                return
-
+            # 空快照也要套用：代表交易所端已無掛單（例如斷線期間成交/取消）
             self.offers = pd.DataFrame(infos, columns=self.response_keys).set_index('OFFER_ID')
             self.offers_updated.set()
 

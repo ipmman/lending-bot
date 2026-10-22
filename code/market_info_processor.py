@@ -343,9 +343,9 @@ class MarketInfoProcessor:
         """
         try:
             book_payload = data[-1]
-            # 判斷是快照 (list of lists) 還是單筆更新 (list)
+            # 判斷是快照 (list of lists，可能為空) 還是單筆更新 (list)
             is_snapshot = isinstance(book_payload, list) and \
-                          isinstance(book_payload[0], list)
+                          (not book_payload or isinstance(book_payload[0], list))
 
             # 統一在最外層獲取鎖，避免 deadlock
             async with self.book_lock:

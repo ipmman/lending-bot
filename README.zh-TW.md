@@ -60,7 +60,7 @@ pip install -r requirements.txt
 
 #### 3. 設定環境變數（必做）
 
-此專案會在啟動時檢查 `BFX_API_KEY` / `BFX_API_SECRET`，缺少會直接噴錯結束。
+此專案會在啟動時檢查 `BFX_API_KEY` / `BFX_API_SECRET`（`ENVIRONMENT=development` 時改查測試帳號的 `BFX_TEST_API_KEY` / `BFX_TEST_API_SECRET`），缺少會直接噴錯結束。
 
 - 建議：複製模板
 
@@ -124,6 +124,9 @@ docker run --rm -it \
 |---------|------|
 | `BFX_API_KEY` | 您的 Bitfinex API Key |
 | `BFX_API_SECRET` | 您的 Bitfinex API Secret |
+| `ENVIRONMENT` | `production`（預設）使用正式帳號與 `BFX_API_*` 金鑰；`development` 使用測試（paper）帳號（`TEST` 幣種）與 `BFX_TEST_API_*` 金鑰 |
+| `BFX_TEST_API_KEY` | 測試帳號 API Key，僅 `ENVIRONMENT=development` 時需要 |
+| `BFX_TEST_API_SECRET` | 測試帳號 API Secret，僅 `ENVIRONMENT=development` 時需要 |
 
 ### 基本設定 (Basic)
 

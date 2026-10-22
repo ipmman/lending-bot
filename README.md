@@ -60,7 +60,7 @@ pip install -r requirements.txt
 
 #### 3. Set Environment Variables (Required)
 
-The project checks for `BFX_API_KEY` / `BFX_API_SECRET` at startup. Missing these will cause an error exit.
+The project checks for `BFX_API_KEY` / `BFX_API_SECRET` at startup (or `BFX_TEST_API_KEY` / `BFX_TEST_API_SECRET` when `ENVIRONMENT=development`, which uses the paper-trading account). Missing these will cause an error exit.
 
 - Suggestion: Copy the template
 
@@ -124,6 +124,9 @@ docker run --rm -it \
 |---------------|-------------|
 | `BFX_API_KEY` | Your Bitfinex API Key |
 | `BFX_API_SECRET` | Your Bitfinex API Secret |
+| `ENVIRONMENT` | `production` (default) uses the live account and `BFX_API_*` keys; `development` uses the paper-trading account (`TEST` symbols) and `BFX_TEST_API_*` keys |
+| `BFX_TEST_API_KEY` | Paper-trading API Key, required only when `ENVIRONMENT=development` |
+| `BFX_TEST_API_SECRET` | Paper-trading API Secret, required only when `ENVIRONMENT=development` |
 
 ### Basic Settings
 

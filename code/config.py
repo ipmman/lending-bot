@@ -12,13 +12,15 @@ load_dotenv()
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
 # ============== API 認證 ==============
-API_KEY: str = os.getenv("BFX_API_KEY", "")
-API_SECRET: str = os.getenv("BFX_API_SECRET", "")
+# 正式帳號用 BFX_API_KEY/SECRET；development 用測試（paper）帳號的 BFX_TEST_API_KEY/SECRET
+_KEY_PREFIX: str = "BFX_TEST_" if ENVIRONMENT == "development" else "BFX_"
+API_KEY: str = os.getenv(f"{_KEY_PREFIX}API_KEY", "")
+API_SECRET: str = os.getenv(f"{_KEY_PREFIX}API_SECRET", "")
 
 def validate_config() -> None:
     """驗證必填設定，啟動時呼叫"""
     if not API_KEY or not API_SECRET:
-        raise ValueError("BFX_API_KEY 和 BFX_API_SECRET 必須設定（透過 .env 或環境變數）")
+        raise ValueError(f"{_KEY_PREFIX}API_KEY 和 {_KEY_PREFIX}API_SECRET 必須設定（透過 .env 或環境變數，ENVIRONMENT={ENVIRONMENT}）")
 
 # ============== WebSocket URIs ==============
 PUBLIC_URI: str = "wss://api-pub.bitfinex.com/ws/2"

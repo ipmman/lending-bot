@@ -1,5 +1,5 @@
-# Use the official Python 3.11.5 image as the base image.
-FROM python:3.11.5-slim
+# Use the official Python 3.11 slim image; the tag follows the latest 3.11 patch release.
+FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ="Asia/Taipei" \
@@ -7,7 +7,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_SYSTEM_PYTHON=1
 
 RUN apt-get update && \
+    # ca-certificates is listed so the build upgrades it to the newest CA bundle.
     apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
     nano && \
     # Install uv using the official installer.
@@ -24,7 +26,9 @@ WORKDIR /workspace
 # Copy requirements first so Docker can reuse the dependency layer when it is unchanged.
 COPY requirements.txt /workspace/requirements.txt
 
-RUN uv pip install --system --no-cache -r requirements.txt
+# The image's own pip carries its own CA bundle; 26.2.2 is the first release
+# without the compromised emSign root, so upgrade it alongside the requirements.
+RUN uv pip install --system --no-cache "pip>=26.2.2" -r requirements.txt
 
 RUN  mkdir -p /workspace/logs
 # Copy the application code into the image.
